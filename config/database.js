@@ -6,7 +6,7 @@ const sequelize = new Sequelize(
   'root',
   '',
   {
-    host: 'localhost',
+    host: '127.0.0.1',
     dialect: 'mysql',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {

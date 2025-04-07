@@ -2,7 +2,7 @@
 const { Sequelize } = require('sequelize');
 
 const sequelize = new Sequelize(
-    'realeestate_mangment',
+    'realestate_mangment',
   'root',
   '',
   {

@@ -2,10 +2,13 @@
 const RealEstateUnit = require('../models/realEstateUnit.model');
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
+const Reservation = require('../models/reservation.model');
+const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
 
 // Get all units
+// تعديل دالة getAllUnits في realEstateUnit.controller.js
 const getAllUnits = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الوحدات
   if(req.user.role === 'tenant') {
@@ -13,7 +16,7 @@ const getAllUnits = catchAsync(async (req, res, next) => {
   }
   
   // إذا كان المستخدم مديرًا، فقط إظهار وحدات شركته
-  const whereCondition = {};
+  let whereCondition = {};
   let includeOptions = [
     { 
       model: Building, 
@@ -40,6 +43,76 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     status: 'success',
     results: units.length,
     data: units
+  });
+});
+
+// تعديل دالة getAvailableUnits
+const getAvailableUnits = catchAsync(async (req, res) => {
+  // معلمات التصفية
+  const { 
+    minPrice, 
+    maxPrice, 
+    bedrooms, 
+    bathrooms, 
+    buildingId,
+    companyId 
+  } = req.query;
+  
+  // بناء كائن التصفية
+  const filter = {
+    status: 'available'
+  };
+  
+  // إضافة نطاق السعر إذا تم توفيره
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    filter.price = {};
+    if (minPrice !== undefined) filter.price[Op.gte] = parseFloat(minPrice);
+    if (maxPrice !== undefined) filter.price[Op.lte] = parseFloat(maxPrice);
+  }
+  
+  // إضافة غرف النوم إذا تم توفيرها
+  if (bedrooms !== undefined) {
+    filter.bedrooms = parseInt(bedrooms);
+  }
+  
+  // إضافة الحمامات إذا تم توفيرها
+  if (bathrooms !== undefined) {
+    filter.bathrooms = parseInt(bathrooms);
+  }
+  
+  // إضافة مصفاة المبنى
+  if (buildingId !== undefined) {
+    filter.buildingId = parseInt(buildingId);
+  }
+  
+  // خيارات التضمين
+  const includeOptions = [
+    { 
+      model: Building, 
+      as: 'building',
+      include: [
+        { model: Company, as: 'company' }
+      ]
+    }
+  ];
+  
+  // إضافة مصفاة الشركة إذا تم توفيرها
+  if (companyId !== undefined) {
+    includeOptions[0].where = { companyId: parseInt(companyId) };
+  } else if (req.user.role === 'manager' && req.user.companyId) {
+    // إذا كان المستخدم مديرًا، فقط إظهار وحدات شركته
+    includeOptions[0].where = { companyId: req.user.companyId };
+  }
+  
+  const availableUnits = await RealEstateUnit.findAll({
+    where: filter,
+    include: includeOptions
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    results: availableUnits.length,
+    data: availableUnits
   });
 });
 
@@ -209,72 +282,7 @@ const getUnitsByBuildingId = catchAsync(async (req, res, next) => {
   });
 });
 
-// Get all available units
-const getAvailableUnits = catchAsync(async (req, res) => {
-  // Filter parameters
-  const { 
-    minPrice, 
-    maxPrice, 
-    bedrooms, 
-    bathrooms, 
-    buildingId,
-    companyId 
-  } = req.query;
-  
-  // Build filter object
-  const filter = {
-    status: 'available'
-  };
-  
-  // Add price range if provided
-  if (minPrice !== undefined || maxPrice !== undefined) {
-    filter.price = {};
-    if (minPrice !== undefined) filter.price[Op.gte] = parseFloat(minPrice);
-    if (maxPrice !== undefined) filter.price[Op.lte] = parseFloat(maxPrice);
-  }
-  
-  // Add bedrooms if provided
-  if (bedrooms !== undefined) {
-    filter.bedrooms = parseInt(bedrooms);
-  }
-  
-  // Add bathrooms if provided
-  if (bathrooms !== undefined) {
-    filter.bathrooms = parseInt(bathrooms);
-  }
-  
-  // Add building filter
-  if (buildingId !== undefined) {
-    filter.buildingId = parseInt(buildingId);
-  }
-  
-  // Include options
-  const includeOptions = [
-    { 
-      model: Building, 
-      as: 'building',
-      include: [
-        { model: Company, as: 'company' }
-      ]
-    }
-  ];
-  
-  // Add company filter if provided
-  if (companyId !== undefined) {
-    includeOptions[0].where = { companyId: parseInt(companyId) };
-  }
-  
-  const availableUnits = await RealEstateUnit.findAll({
-    where: filter,
-    include: includeOptions
-  });
-  
-  res.status(200).json({
-    status: 'success',
-    results: availableUnits.length,
-    data: availableUnits
-  });
-});
+
 
 module.exports = {
   getAllUnits,

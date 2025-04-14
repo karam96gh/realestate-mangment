@@ -1,24 +1,78 @@
-// Payment History controller 
+// استيراد النماذج المطلوبة
 const PaymentHistory = require('../models/paymentHistory.model');
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
+const RealEstateUnit = require('../models/realEstateUnit.model');
+const Building = require('../models/building.model');
+const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
+const { Op } = require('sequelize');
 
-// Get all payments
-const getAllPayments = catchAsync(async (req, res) => {
+// الحصول على جميع الدفعات
+const getAllPayments = catchAsync(async (req, res, next) => {
+  // المستأجرون لا يمكنهم رؤية كل الدفعات
+  if(req.user.role === 'tenant') {
+    return next(new AppError('غير مصرح لك بعرض جميع الدفعات', 403));
+  }
+  
+  let includeOptions = [
+    { 
+      model: Reservation, 
+      as: 'reservation',
+      include: [
+        { model: User, as: 'user', attributes: { exclude: ['password'] } },
+        { 
+          model: RealEstateUnit, 
+          as: 'unit',
+          include: [{
+            model: Building,
+            as: 'building',
+            include: [{ model: Company, as: 'company' }]
+          }]
+        }
+      ]
+    }
+  ];
+  
+  let whereCondition = {};
+  
+  // إذا كان المستخدم مديرًا، فقط إظهار دفعات شركته
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
+    
+    // نحتاج لاستعلام متداخل للحصول على الدفعات المرتبطة بشركة المدير
+    const companyBuildings = await Building.findAll({
+      where: { companyId: req.user.companyId },
+      attributes: ['id']
+    });
+    
+    const buildingIds = companyBuildings.map(building => building.id);
+    
+    const companyUnits = await RealEstateUnit.findAll({
+      where: { buildingId: buildingIds },
+      attributes: ['id']
+    });
+    
+    const unitIds = companyUnits.map(unit => unit.id);
+    
+    const companyReservations = await Reservation.findAll({
+      where: { unitId: { [Op.in]: unitIds } },
+      attributes: ['id']
+    });
+    
+    const reservationIds = companyReservations.map(reservation => reservation.id);
+    
+    whereCondition.reservationId = { [Op.in]: reservationIds };
+  }
+  
   const payments = await PaymentHistory.findAll({
-    include: [
-      { 
-        model: Reservation, 
-        as: 'reservation',
-        include: [
-          { model: User, as: 'user', attributes: { exclude: ['password'] } }
-        ]
-      }
-    ]
+    where: whereCondition,
+    include: includeOptions
   });
   
   res.status(200).json({
@@ -28,7 +82,7 @@ const getAllPayments = catchAsync(async (req, res) => {
   });
 });
 
-// Get payment by ID
+// الحصول على دفعة حسب معرفها
 const getPaymentById = catchAsync(async (req, res, next) => {
   const payment = await PaymentHistory.findByPk(req.params.id, {
     include: [
@@ -36,19 +90,36 @@ const getPaymentById = catchAsync(async (req, res, next) => {
         model: Reservation, 
         as: 'reservation',
         include: [
-          { model: User, as: 'user', attributes: { exclude: ['password'] } }
+          { model: User, as: 'user', attributes: { exclude: ['password'] } },
+          { 
+            model: RealEstateUnit, 
+            as: 'unit',
+            include: [{
+              model: Building,
+              as: 'building',
+              include: [{ model: Company, as: 'company' }]
+            }]
+          }
         ]
       }
     ]
   });
   
   if (!payment) {
-    return next(new AppError('Payment not found', 404));
+    return next(new AppError('لم يتم العثور على الدفعة', 404));
   }
   
-  // If user is a tenant, they can only view their own payments
+  // تحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية دفعاته الخاصة
   if (req.user.role === 'tenant' && payment.reservation.userId !== req.user.id) {
-    return next(new AppError('You are not authorized to view this payment', 403));
+    return next(new AppError('غير مصرح لك بعرض هذه الدفعة', 403));
+  }
+  
+  // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية دفعات شركته
+  if (req.user.role === 'manager') {
+    const companyId = payment.reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بعرض هذه الدفعة', 403));
+    }
   }
   
   res.status(200).json({
@@ -57,28 +128,49 @@ const getPaymentById = catchAsync(async (req, res, next) => {
   });
 });
 
-// Create new payment
+// إنشاء دفعة جديدة
 const createPayment = catchAsync(async (req, res, next) => {
   const { reservationId, amount, paymentDate, paymentMethod, status, notes } = req.body;
   
-  // Verify reservation exists
-  const reservation = await Reservation.findByPk(reservationId);
+  // التحقق من وجود الحجز
+  const reservation = await Reservation.findByPk(reservationId, {
+    include: [
+      { model: User, as: 'user' },
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        include: [{
+          model: Building,
+          as: 'building'
+        }]
+      }
+    ]
+  });
+  
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('الحجز غير موجود', 404));
   }
   
-  // Only admin/manager can create payments
+  // التحقق من الصلاحيات
   if (req.user.role === 'tenant') {
-    return next(new AppError('Only administrators can create payment records', 403));
+    return next(new AppError('فقط المشرفون والمديرون يمكنهم إنشاء سجلات الدفع', 403));
   }
   
-  // Handle check image upload
+  // إذا كان المستخدم مديرًا، تحقق من أن الحجز ينتمي إلى شركته
+  if (req.user.role === 'manager') {
+    const companyId = reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بإنشاء دفعة لهذا الحجز', 403));
+    }
+  }
+  
+  // معالجة صورة الشيك إذا تم توفيرها
   let checkImage = null;
   if (req.file) {
     checkImage = req.file.filename;
   }
   
-  // Create payment
+  // إنشاء الدفعة
   const newPayment = await PaymentHistory.create({
     reservationId,
     amount,
@@ -95,25 +187,50 @@ const createPayment = catchAsync(async (req, res, next) => {
   });
 });
 
-// Update payment
+// تحديث دفعة
 const updatePayment = catchAsync(async (req, res, next) => {
-  const payment = await PaymentHistory.findByPk(req.params.id);
+  const payment = await PaymentHistory.findByPk(req.params.id, {
+    include: [
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [
+          { 
+            model: RealEstateUnit, 
+            as: 'unit',
+            include: [{
+              model: Building,
+              as: 'building'
+            }]
+          }
+        ]
+      }
+    ]
+  });
   
   if (!payment) {
-    return next(new AppError('Payment not found', 404));
+    return next(new AppError('لم يتم العثور على الدفعة', 404));
   }
   
-  // Only admin/manager can update payments
+  // التحقق من الصلاحيات
   if (req.user.role === 'tenant') {
-    return next(new AppError('Only administrators can update payment records', 403));
+    return next(new AppError('فقط المشرفون والمديرون يمكنهم تحديث سجلات الدفع', 403));
+  }
+  
+  // إذا كان المستخدم مديرًا، تحقق من أن الدفعة تنتمي إلى شركته
+  if (req.user.role === 'manager') {
+    const companyId = payment.reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بتحديث هذه الدفعة', 403));
+    }
   }
   
   const { amount, paymentDate, paymentMethod, status, notes } = req.body;
   
-  // Handle check image upload if provided
+  // معالجة صورة الشيك إذا تم توفيرها
   let checkImage = payment.checkImage;
   if (req.file) {
-    // Delete old check image if it exists
+    // حذف صورة الشيك القديمة إذا كانت موجودة
     if (payment.checkImage) {
       const oldCheckPath = path.join(UPLOAD_PATHS.checks, payment.checkImage);
       if (fs.existsSync(oldCheckPath)) {
@@ -123,7 +240,7 @@ const updatePayment = catchAsync(async (req, res, next) => {
     checkImage = req.file.filename;
   }
   
-  // Update payment
+  // تحديث الدفعة
   await payment.update({
     amount: amount || payment.amount,
     paymentDate: paymentDate || payment.paymentDate,
@@ -139,20 +256,45 @@ const updatePayment = catchAsync(async (req, res, next) => {
   });
 });
 
-// Delete payment
+// حذف دفعة
 const deletePayment = catchAsync(async (req, res, next) => {
-  const payment = await PaymentHistory.findByPk(req.params.id);
+  const payment = await PaymentHistory.findByPk(req.params.id, {
+    include: [
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [
+          { 
+            model: RealEstateUnit, 
+            as: 'unit',
+            include: [{
+              model: Building,
+              as: 'building'
+            }]
+          }
+        ]
+      }
+    ]
+  });
   
   if (!payment) {
-    return next(new AppError('Payment not found', 404));
+    return next(new AppError('لم يتم العثور على الدفعة', 404));
   }
   
-  // Only admin/manager can delete payments
+  // التحقق من الصلاحيات
   if (req.user.role === 'tenant') {
-    return next(new AppError('Only administrators can delete payment records', 403));
+    return next(new AppError('فقط المشرفون والمديرون يمكنهم حذف سجلات الدفع', 403));
   }
   
-  // Delete check image if it exists
+  // إذا كان المستخدم مديرًا، تحقق من أن الدفعة تنتمي إلى شركته
+  if (req.user.role === 'manager') {
+    const companyId = payment.reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بحذف هذه الدفعة', 403));
+    }
+  }
+  
+  // حذف صورة الشيك إذا كانت موجودة
   if (payment.checkImage) {
     const checkPath = path.join(UPLOAD_PATHS.checks, payment.checkImage);
     if (fs.existsSync(checkPath)) {
@@ -168,19 +310,40 @@ const deletePayment = catchAsync(async (req, res, next) => {
   });
 });
 
-// Get payments by reservation ID
+// الحصول على الدفعات حسب معرف الحجز
 const getPaymentsByReservationId = catchAsync(async (req, res, next) => {
   const reservationId = req.params.reservationId;
   
-  // Verify reservation exists
-  const reservation = await Reservation.findByPk(reservationId);
+  // التحقق من وجود الحجز
+  const reservation = await Reservation.findByPk(reservationId, {
+    include: [
+      { model: User, as: 'user' },
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        include: [{
+          model: Building,
+          as: 'building'
+        }]
+      }
+    ]
+  });
+  
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('الحجز غير موجود', 404));
   }
   
-  // If user is a tenant, they can only view payments for their own reservations
+  // تحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية دفعاته الخاصة
   if (req.user.role === 'tenant' && reservation.userId !== req.user.id) {
-    return next(new AppError('You can only view payments for your own reservations', 403));
+    return next(new AppError('يمكنك فقط عرض الدفعات لحجوزاتك الخاصة', 403));
+  }
+  
+  // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية دفعات شركته
+  if (req.user.role === 'manager') {
+    const companyId = reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بعرض دفعات هذا الحجز', 403));
+    }
   }
   
   const payments = await PaymentHistory.findAll({

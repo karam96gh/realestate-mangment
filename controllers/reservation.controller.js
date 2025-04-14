@@ -1,12 +1,14 @@
-// Reservation controller 
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
 const RealEstateUnit = require('../models/realEstateUnit.model');
+const Building = require('../models/building.model');
+const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const generatePassword = require('../utils/generatePassword');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
+const { Op } = require('sequelize');
 
 
 const getMyReservations = catchAsync(async (req, res) => {
@@ -60,7 +62,8 @@ const getAllReservations = catchAsync(async (req, res, next) => {
       as: 'unit',
       include: [{
         model: Building,
-        as: 'building'
+        as: 'building',
+        include: [{ model: Company, as: 'company' }]
       }]
     }
   ];
@@ -71,7 +74,23 @@ const getAllReservations = catchAsync(async (req, res, next) => {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
     
-    includeOptions[1].include[0].where = { companyId: req.user.companyId };
+    // نحتاج للتأكد من أن الاستعلام يتم بشكل صحيح
+    // نحتاج لاستعلام متداخل للحصول على الحجوزات المرتبطة بشركة المدير
+    const companyBuildings = await Building.findAll({
+      where: { companyId: req.user.companyId },
+      attributes: ['id']
+    });
+    
+    const buildingIds = companyBuildings.map(building => building.id);
+    
+    const companyUnits = await RealEstateUnit.findAll({
+      where: { buildingId: buildingIds },
+      attributes: ['id']
+    });
+    
+    const unitIds = companyUnits.map(unit => unit.id);
+    
+    whereCondition.unitId = { [Op.in]: unitIds };
   }
   
   const reservations = await Reservation.findAll({

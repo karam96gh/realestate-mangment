@@ -18,12 +18,49 @@ const checkRole = (roles) => {
       next();
     };
   };
+  // التحقق من ملكية المستأجر للحجز
+const isTenantOwner = async (req, res, next) => {
+  try {
+    const reservationId = req.params.reservationId || req.body.reservationId;
+    if (!reservationId) {
+      return res.status(400).json({ message: 'معرف الحجز مطلوب' });
+    }
+    
+    const reservation = await Reservation.findByPk(reservationId);
+    if (!reservation) {
+      return res.status(404).json({ message: 'الحجز غير موجود' });
+    }
+    
+    if (req.user.role === 'tenant' && reservation.userId !== req.user.id) {
+      return res.status(403).json({ message: 'غير مصرح بالوصول لهذا الحجز' });
+    }
+    
+    // إذا كان المستخدم مديرًا، تحقق من أن الحجز ينتمي إلى شركته
+    if (req.user.role === 'manager') {
+      const unit = await RealEstateUnit.findByPk(reservation.unitId, {
+        include: [{
+          model: Building,
+          as: 'building'
+        }]
+      });
+      
+      if (!unit || unit.building.companyId !== req.user.companyId) {
+        return res.status(403).json({ message: 'غير مصرح بالوصول لهذا الحجز' });
+      }
+    }
+    
+    next();
+  } catch (error) {
+    return res.status(500).json({ message: 'خطأ في التحقق من ملكية الحجز' });
+  }
+};
+
+module.exports = {
+  isAdmin: checkRole(['admin']),
+  isManager: checkRole(['manager']),
+  isTenant: checkRole(['tenant']),
+  isAdminOrManager: checkRole(['admin', 'manager']),
+  isTenantOwner,
+  checkRole // تصدير الوظيفة العامة للتحقق المخصص من الأدوار
+};
   
-  // Export specific role check functions
-  module.exports = {
-    isAdmin: checkRole(['admin']),
-    isManager: checkRole(['admin', 'manager']),
-    isTenant: checkRole(['tenant']),
-    isAdminOrManager: checkRole(['admin', 'manager']),
-    checkRole // Export the generic function for custom role checks
-  };

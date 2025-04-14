@@ -1,8 +1,11 @@
 // controllers/building.controller.js
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
+const RealEstateUnit = require('../models/realEstateUnit.model');
+const Reservation = require('../models/reservation.model');
+const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
-
+const { Op } = require('sequelize');
 // Get all buildings
 const getAllBuildings = catchAsync(async (req, res) => {
   // إذا كان المستخدم مديرًا، فقط إظهار البنايات من شركته

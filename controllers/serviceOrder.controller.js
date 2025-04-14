@@ -1,11 +1,14 @@
-// Service Order controller 
 const ServiceOrder = require('../models/serviceOrder.model');
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
+const RealEstateUnit = require('../models/realEstateUnit.model');
+const Building = require('../models/building.model');
+const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
+const { Op } = require('sequelize');
 
 // Get all service orders
 const getAllServiceOrders = catchAsync(async (req, res, next) => {

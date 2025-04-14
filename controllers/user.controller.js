@@ -30,7 +30,7 @@ const getUserById = catchAsync(async (req, res, next) => {
     
     const user = await User.findByPk(req.params.id, {
       attributes: { exclude: ['password'] },
-      include: user.role === 'manager' ? [{
+      include: req.user.role === 'manager' ? [{
         model: Company,
         as: 'company'
       }] : []

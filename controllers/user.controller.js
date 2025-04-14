@@ -1,5 +1,5 @@
-// User controller 
 const User = require('../models/user.model');
+const Company = require('../models/company.model'); // إضافة استيراد نموذج Company
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const fs = require('fs');
 const path = require('path');

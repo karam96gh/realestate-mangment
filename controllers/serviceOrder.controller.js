@@ -8,15 +8,41 @@ const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 
 // Get all service orders
-const getAllServiceOrders = catchAsync(async (req, res) => {
+const getAllServiceOrders = catchAsync(async (req, res, next) => {
+  // المستأجرون لا يمكنهم رؤية كل طلبات الخدمة
+  if(req.user.role === 'tenant') {
+    return next(new AppError('غير مصرح لك بعرض جميع طلبات الخدمة', 403));
+  }
+  
+  let whereCondition = {};
+  let includeOptions = [
+    { model: User, as: 'user', attributes: { exclude: ['password'] } },
+    { 
+      model: Reservation, 
+      as: 'reservation',
+      include: [{
+        model: RealEstateUnit,
+        as: 'unit',
+        include: [{
+          model: Building,
+          as: 'building'
+        }]
+      }]
+    }
+  ];
+  
+  // إذا كان المستخدم مديرًا، فقط إظهار طلبات خدمة شركته
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
+    
+    includeOptions[1].include[0].include[0].where = { companyId: req.user.companyId };
+  }
+  
   const serviceOrders = await ServiceOrder.findAll({
-    include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } },
-      { 
-        model: Reservation, 
-        as: 'reservation'
-      }
-    ]
+    where: whereCondition,
+    include: includeOptions
   });
   
   res.status(200).json({
@@ -26,25 +52,41 @@ const getAllServiceOrders = catchAsync(async (req, res) => {
   });
 });
 
-// Get service order by ID
 const getServiceOrderById = catchAsync(async (req, res, next) => {
   const serviceOrder = await ServiceOrder.findByPk(req.params.id, {
     include: [
       { model: User, as: 'user', attributes: { exclude: ['password'] } },
       { 
         model: Reservation, 
-        as: 'reservation'
+        as: 'reservation',
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          include: [{
+            model: Building,
+            as: 'building',
+            include: [{ model: Company, as: 'company' }]
+          }]
+        }]
       }
     ]
   });
   
   if (!serviceOrder) {
-    return next(new AppError('Service order not found', 404));
+    return next(new AppError('لم يتم العثور على طلب الخدمة', 404));
   }
   
-  // Check if the requesting user is authorized to view this service order
+  // تحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية طلبات الخدمة الخاصة به
   if (req.user.role === 'tenant' && serviceOrder.userId !== req.user.id) {
-    return next(new AppError('You are not authorized to view this service order', 403));
+    return next(new AppError('غير مصرح لك بعرض طلب الخدمة هذا', 403));
+  }
+  
+  // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية طلبات الخدمة لشركته
+  if (req.user.role === 'manager') {
+    const companyId = serviceOrder.reservation.unit.building.companyId;
+    if (!req.user.companyId || req.user.companyId !== companyId) {
+      return next(new AppError('غير مصرح لك بعرض طلب الخدمة هذا', 403));
+    }
   }
   
   res.status(200).json({
@@ -52,6 +94,8 @@ const getServiceOrderById = catchAsync(async (req, res, next) => {
     data: serviceOrder
   });
 });
+// Get service order by ID
+
 
 // Create new service order
 const createServiceOrder = catchAsync(async (req, res, next) => {

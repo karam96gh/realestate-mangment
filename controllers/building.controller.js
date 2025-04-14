@@ -5,11 +5,17 @@ const { catchAsync, AppError } = require('../utils/errorHandler');
 
 // Get all buildings
 const getAllBuildings = catchAsync(async (req, res) => {
-  // If user is a manager, only show buildings from their company
+  // إذا كان المستخدم مديرًا، فقط إظهار البنايات من شركته
   const whereCondition = {};
   
-  if (req.user.role === 'manager' && req.user.companyId) {
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
     whereCondition.companyId = req.user.companyId;
+  } else if (req.user.role === 'tenant') {
+    // المستأجرون لا يمكنهم رؤية كل البنايات
+    return next(new AppError('غير مصرح لك بعرض جميع البنايات', 403));
   }
   
   const buildings = await Building.findAll({
@@ -26,7 +32,6 @@ const getAllBuildings = catchAsync(async (req, res) => {
   });
 });
 
-// Get building by ID
 const getBuildingById = catchAsync(async (req, res, next) => {
   const building = await Building.findByPk(req.params.id, {
     include: [
@@ -35,12 +40,26 @@ const getBuildingById = catchAsync(async (req, res, next) => {
   });
   
   if (!building) {
-    return next(new AppError('Building not found', 404));
+    return next(new AppError('لم يتم العثور على البناية', 404));
   }
   
-  // If user is a manager, verify they belong to the same company
+  // تحقق إذا كان المستخدم مديرًا أو مستأجرًا له علاقة بهذه البناية
   if (req.user.role === 'manager' && req.user.companyId !== building.companyId) {
-    return next(new AppError('You are not authorized to view this building', 403));
+    return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
+  } else if (req.user.role === 'tenant') {
+    // التحقق من وجود حجوزات للمستأجر في هذه البناية
+    const hasReservation = await Reservation.findOne({
+      where: { userId: req.user.id },
+      include: [{
+        model: RealEstateUnit,
+        as: 'unit',
+        where: { buildingId: building.id }
+      }]
+    });
+    
+    if (!hasReservation) {
+      return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
+    }
   }
   
   res.status(200).json({
@@ -48,6 +67,7 @@ const getBuildingById = catchAsync(async (req, res, next) => {
     data: building
   });
 });
+
 
 // Create new building
 const createBuilding = catchAsync(async (req, res, next) => {

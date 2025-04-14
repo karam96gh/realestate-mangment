@@ -6,24 +6,36 @@ const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
 
 // Get all units
-const getAllUnits = catchAsync(async (req, res) => {
-  if(req.user.role=='admin'||req.user.role=='tenant')
-    return next(new AppError('You are not authorized to view this units', 403));
- 
-  const companyId = req.user.companyId;
+const getAllUnits = catchAsync(async (req, res, next) => {
+  // المستأجرون لا يمكنهم رؤية كل الوحدات
+  if(req.user.role === 'tenant') {
+    return next(new AppError('غير مصرح لك بعرض جميع الوحدات', 403));
+  }
+  
+  // إذا كان المستخدم مديرًا، فقط إظهار وحدات شركته
+  const whereCondition = {};
+  let includeOptions = [
+    { 
+      model: Building, 
+      as: 'building',
+      include: [
+        { model: Company, as: 'company' }
+      ]
+    }
+  ];
+  
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
+    includeOptions[0].where = { companyId: req.user.companyId };
+  }
   
   const units = await RealEstateUnit.findAll({
-    include: [
-      { 
-        model: Building, 
-        as: 'building',
-        where: { companyId }, // Filter buildings by company ID
-        include: [
-          { model: Company, as: 'company' }
-        ]
-      }
-    ]
+    where: whereCondition,
+    include: includeOptions
   });
+  
   res.status(200).json({
     status: 'success',
     results: units.length,
@@ -31,12 +43,7 @@ const getAllUnits = catchAsync(async (req, res) => {
   });
 });
 
-// Get unit by ID
 const getUnitById = catchAsync(async (req, res, next) => {
-  if(req.user.role=='admin'||req.user.role=='tenant')
-    return next(new AppError('You are not authorized to view this units', 403));
- 
-  const companyId = req.user.companyId;
   const unit = await RealEstateUnit.findByPk(req.params.id, {
     include: [
       { 
@@ -50,7 +57,26 @@ const getUnitById = catchAsync(async (req, res, next) => {
   });
   
   if (!unit) {
-    return next(new AppError('Unit not found', 404));
+    return next(new AppError('لم يتم العثور على الوحدة', 404));
+  }
+  
+  // تحقق إذا كان المستخدم مديرًا للشركة المالكة للوحدة
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId || req.user.companyId !== unit.building.companyId) {
+      return next(new AppError('غير مصرح لك بعرض هذه الوحدة', 403));
+    }
+  } else if (req.user.role === 'tenant') {
+    // التحقق من وجود حجوزات للمستأجر لهذه الوحدة
+    const hasReservation = await Reservation.findOne({
+      where: { 
+        userId: req.user.id,
+        unitId: unit.id
+      }
+    });
+    
+    if (!hasReservation) {
+      return next(new AppError('غير مصرح لك بعرض هذه الوحدة', 403));
+    }
   }
   
   res.status(200).json({
@@ -58,6 +84,9 @@ const getUnitById = catchAsync(async (req, res, next) => {
     data: unit
   });
 });
+
+// Get unit by ID
+
 
 // Create new unit
 const createUnit = catchAsync(async (req, res, next) => {

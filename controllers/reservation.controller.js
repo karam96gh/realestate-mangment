@@ -46,12 +46,37 @@ const getMyReservations = catchAsync(async (req, res) => {
     });
   });
 // Get all reservations
-const getAllReservations = catchAsync(async (req, res) => {
+const getAllReservations = catchAsync(async (req, res, next) => {
+  // المستأجرون لا يمكنهم رؤية كل الحجوزات
+  if(req.user.role === 'tenant') {
+    return next(new AppError('غير مصرح لك بعرض جميع الحجوزات', 403));
+  }
+  
+  let whereCondition = {};
+  let includeOptions = [
+    { model: User, as: 'user', attributes: { exclude: ['password'] } },
+    { 
+      model: RealEstateUnit, 
+      as: 'unit',
+      include: [{
+        model: Building,
+        as: 'building'
+      }]
+    }
+  ];
+  
+  // إذا كان المستخدم مديرًا، فقط إظهار حجوزات شركته
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
+    
+    includeOptions[1].include[0].where = { companyId: req.user.companyId };
+  }
+  
   const reservations = await Reservation.findAll({
-    include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } },
-      { model: RealEstateUnit, as: 'unit' }
-    ]
+    where: whereCondition,
+    include: includeOptions
   });
   
   res.status(200).json({
@@ -61,17 +86,36 @@ const getAllReservations = catchAsync(async (req, res) => {
   });
 });
 
-// Get reservation by ID
 const getReservationById = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id, {
     include: [
       { model: User, as: 'user', attributes: { exclude: ['password'] } },
-      { model: RealEstateUnit, as: 'unit' }
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        include: [{
+          model: Building,
+          as: 'building',
+          include: [{ model: Company, as: 'company' }]
+        }]
+      }
     ]
   });
   
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('لم يتم العثور على الحجز', 404));
+  }
+  
+  // تحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية حجوزاته الخاصة
+  if (req.user.role === 'tenant' && reservation.userId !== req.user.id) {
+    return next(new AppError('غير مصرح لك بعرض هذا الحجز', 403));
+  }
+  
+  // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية حجوزات شركته
+  if (req.user.role === 'manager') {
+    if (!req.user.companyId || req.user.companyId !== reservation.unit.building.companyId) {
+      return next(new AppError('غير مصرح لك بعرض هذا الحجز', 403));
+    }
   }
   
   res.status(200).json({
@@ -79,6 +123,9 @@ const getReservationById = catchAsync(async (req, res, next) => {
     data: reservation
   });
 });
+
+// Get reservation by ID
+
 
 // Create new reservation (and create tenant user if not exists)
 const createReservation = catchAsync(async (req, res, next) => {

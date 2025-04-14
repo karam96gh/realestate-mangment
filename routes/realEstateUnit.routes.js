@@ -15,8 +15,7 @@ router.get('/:id', realEstateUnitController.getUnitById);
 router.get('/building/:buildingId', realEstateUnitController.getUnitsByBuildingId);
 
 // Protected routes
-router.use(authMiddleware);
-router.use(isAdminOrManager);
+
 
 // Create unit
 router.post(

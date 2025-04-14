@@ -7,18 +7,23 @@ const { Op } = require('sequelize');
 
 // Get all units
 const getAllUnits = catchAsync(async (req, res) => {
+  if(req.user.role=='admin'||req.user.role=='tenant')
+    return next(new AppError('You are not authorized to view this units', 403));
+ 
+  const companyId = req.user.companyId;
+  
   const units = await RealEstateUnit.findAll({
     include: [
       { 
         model: Building, 
         as: 'building',
+        where: { companyId }, // Filter buildings by company ID
         include: [
           { model: Company, as: 'company' }
         ]
       }
     ]
   });
-  
   res.status(200).json({
     status: 'success',
     results: units.length,
@@ -28,6 +33,10 @@ const getAllUnits = catchAsync(async (req, res) => {
 
 // Get unit by ID
 const getUnitById = catchAsync(async (req, res, next) => {
+  if(req.user.role=='admin'||req.user.role=='tenant')
+    return next(new AppError('You are not authorized to view this units', 403));
+ 
+  const companyId = req.user.companyId;
   const unit = await RealEstateUnit.findByPk(req.params.id, {
     include: [
       { 

@@ -1,9 +1,10 @@
 const User = require('../models/user.model');
-const Company = require('../models/company.model'); // إضافة استيراد نموذج Company
+const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
+const { addFileUrls } = require('../utils/filePath');
 
 // Get all users (admin only)
 const getAllUsers = catchAsync(async (req, res) => {
@@ -11,40 +12,56 @@ const getAllUsers = catchAsync(async (req, res) => {
     attributes: { exclude: ['password'] }
   });
   
+  // Add file URLs for identity images
+  const usersWithUrls = users.map(user => 
+    addFileUrls(user.toJSON(), {
+      identityImage: 'identities',
+      commercialRegisterImage: 'identities'
+    })
+  );
+  
   res.status(200).json({
     status: 'success',
     results: users.length,
-    data: users
+    data: usersWithUrls
   });
 });
 
 // Get user by ID
-// controllers/user.controller.js
-
-// Get user by ID
 const getUserById = catchAsync(async (req, res, next) => {
-    // Admin can view any user, tenant can only view themselves
-    if (req.user.role === 'tenant' && req.params.id != req.user.id) {
-      return next(new AppError('You are not authorized to view this user', 403));
-    }
-    
-    const user = await User.findByPk(req.params.id, {
-      attributes: { exclude: ['password'] },
-      include: req.user.role === 'manager' ? [{
-        model: Company,
-        as: 'company'
-      }] : []
-    });
-    
-    if (!user) {
-      return next(new AppError('User not found', 404));
-    }
-    
-    res.status(200).json({
-      status: 'success',
-      data: user
-    });
+  // Admin can view any user, tenant can only view themselves
+  if (req.user.role === 'tenant' && req.params.id != req.user.id) {
+    return next(new AppError('You are not authorized to view this user', 403));
+  }
+  
+  const user = await User.findByPk(req.params.id, {
+    attributes: { exclude: ['password'] },
+    include: req.user.role === 'manager' ? [{
+      model: Company,
+      as: 'company'
+    }] : []
   });
+  
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+  
+  // Add file URLs for identity images
+  const userWithUrls = addFileUrls(user.toJSON(), {
+    identityImage: 'identities',
+    commercialRegisterImage: 'identities'
+  });
+  
+  // If company is included and has logo, add URL for it
+  if (userWithUrls.company && userWithUrls.company.logoImage) {
+    userWithUrls.company = addFileUrls(userWithUrls.company, { logoImage: 'logos' });
+  }
+  
+  res.status(200).json({
+    status: 'success',
+    data: userWithUrls
+  });
+});
 
 // Update user
 const updateUser = catchAsync(async (req, res, next) => {
@@ -100,12 +117,15 @@ const updateUser = catchAsync(async (req, res, next) => {
     commercialRegisterImage
   });
   
-  // Remove password from response
-  const userResponse = user.toJSON();
+  // Add file URLs for identity images
+  const userWithUrls = addFileUrls(user.toJSON(), {
+    identityImage: 'identities',
+    commercialRegisterImage: 'identities'
+  });
   
   res.status(200).json({
     status: 'success',
-    data: userResponse
+    data: userWithUrls
   });
 });
 

@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
-
+const { addFileUrls } = require('../utils/filePath');
 
 const getMyReservations = catchAsync(async (req, res) => {
   // Get reservations for the authenticated user
@@ -49,13 +49,19 @@ const getMyReservations = catchAsync(async (req, res) => {
     order: [['createdAt', 'DESC']]
   });
   
+  // Add file URLs to each reservation
+  const reservationsWithUrls = reservations.map(reservation => 
+    addFileUrls(reservation.toJSON(), { contractImage: 'contracts' })
+  );
+  
   // Return empty array if no reservations found
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservations
+    data: reservationsWithUrls
   });
 });
+
 // Get all reservations
 const getAllReservations = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الحجوزات
@@ -107,10 +113,28 @@ const getAllReservations = catchAsync(async (req, res, next) => {
     include: includeOptions
   });
   
+  // Add file URLs to reservations and users
+  const reservationsWithUrls = reservations.map(reservation => {
+    const reservationJson = reservation.toJSON();
+    
+    // Add contract URL to reservation
+    const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
+    
+    // Add identity URLs to user if present
+    if (reservationWithUrl.user) {
+      reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
+        identityImage: 'identities',
+        commercialRegisterImage: 'identities'
+      });
+    }
+    
+    return reservationWithUrl;
+  });
+  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservations
+    data: reservationsWithUrls
   });
 });
 
@@ -146,19 +170,28 @@ const getReservationById = catchAsync(async (req, res, next) => {
     }
   }
   
+  // Add file URLs to reservation and user
+  const reservationJson = reservation.toJSON();
+  
+  // Add contract URL to reservation
+  const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
+  
+  // Add identity URLs to user if present
+  if (reservationWithUrl.user) {
+    reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
+      identityImage: 'identities',
+      commercialRegisterImage: 'identities'
+    });
+  }
+  
   res.status(200).json({
     status: 'success',
-    data: reservation
+    data: reservationWithUrl
   });
 });
 
-// Get reservation by ID
-
-
 // Create new reservation (and create tenant user if not exists)
 const createReservation = catchAsync(async (req, res, next) => {
-    console.log('kkkk');
-
   const {
     userId,
     unitId,
@@ -245,19 +278,25 @@ const createReservation = catchAsync(async (req, res, next) => {
   // Update unit status to rented
   await unit.update({ status: 'rented' });
   
+  // Add file URLs
+  const reservationWithUrl = addFileUrls(newReservation.toJSON(), { contractImage: 'contracts' });
+  
   // Return reservation with user credentials if a new user was created
   const responseData = {
-    reservation: newReservation,
+    reservation: reservationWithUrl,
     unit: unit
   };
   
-  // If new user was created, include credentials
+  // If new user was created, include credentials and URLs for uploaded files
   if (!userId) {
+    const userWithUrls = addFileUrls(userToAssign.toJSON(), {
+      identityImage: 'identities',
+      commercialRegisterImage: 'identities'
+    });
+    
     responseData.newUser = {
-      id: userToAssign.id,
-      username: userToAssign.username,
+      ...userWithUrls,
       password: password, // Only sent once when created
-      fullName: userToAssign.fullName
     };
   }
   
@@ -307,9 +346,12 @@ const updateReservation = catchAsync(async (req, res, next) => {
     }
   }
   
+  // Add contract URL to response
+  const reservationWithUrl = addFileUrls(reservation.toJSON(), { contractImage: 'contracts' });
+  
   res.status(200).json({
     status: 'success',
-    data: reservation
+    data: reservationWithUrl
   });
 });
 
@@ -354,10 +396,28 @@ const getReservationsByUnitId = catchAsync(async (req, res) => {
     ]
   });
   
+  // Add contract URLs and user identity URLs
+  const reservationsWithUrls = reservations.map(reservation => {
+    const reservationJson = reservation.toJSON();
+    
+    // Add contract URL
+    const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
+    
+    // Add user identity URLs if present
+    if (reservationWithUrl.user) {
+      reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
+        identityImage: 'identities',
+        commercialRegisterImage: 'identities'
+      });
+    }
+    
+    return reservationWithUrl;
+  });
+  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservations
+    data: reservationsWithUrls
   });
 });
 
@@ -370,10 +430,15 @@ const getReservationsByUserId = catchAsync(async (req, res) => {
     ]
   });
   
+  // Add contract URLs
+  const reservationsWithUrls = reservations.map(reservation => 
+    addFileUrls(reservation.toJSON(), { contractImage: 'contracts' })
+  );
+  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservations
+    data: reservationsWithUrls
   });
 });
 

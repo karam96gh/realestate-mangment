@@ -309,8 +309,6 @@ const createReservation = catchAsync(async (req, res, next) => {
     startDate,
     endDate,
     contractImage,
-    identityImage,
-    commercialRegisterImage,
     status: 'active',
     notes
   });

@@ -1,8 +1,8 @@
-// Payment History model 
+// إصلاح مشكلة العلاقات في نموذج PaymentHistory
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
-const Reservation = require('./reservation.model');
 
+// تعريف النموذج بدون إضافة العلاقات
 const PaymentHistory = sequelize.define('PaymentHistory', {
   id: {
     type: DataTypes.INTEGER,
@@ -13,7 +13,7 @@ const PaymentHistory = sequelize.define('PaymentHistory', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: Reservation,
+      model: 'Reservations', // استخدام اسم الجدول بدلاً من النموذج المستورد
       key: 'id'
     }
   },
@@ -48,8 +48,7 @@ const PaymentHistory = sequelize.define('PaymentHistory', {
   }
 });
 
-// Define association
-PaymentHistory.belongsTo(Reservation, { foreignKey: 'reservationId', as: 'reservation' });
-Reservation.hasMany(PaymentHistory, { foreignKey: 'reservationId', as: 'payments' });
+// لن نقوم بتعريف العلاقات هنا
+// سيتم تعريف العلاقات في ملف associations.js
 
 module.exports = PaymentHistory;

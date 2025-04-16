@@ -11,9 +11,10 @@ const ServiceOrder = require('./serviceOrder.model');
 const PaymentHistory = require('./paymentHistory.model');
 
 // تعريف العلاقات بين Company و User
+// استخدم اسماً مستعاراً مختلفاً للعلاقة: companyManager بدلاً من manager
 Company.hasOne(User, {
   foreignKey: 'companyId',
-  as: 'manager',
+  as: 'companyManager',  // تغيير الاسم المستعار من manager إلى companyManager
   scope: {
     role: 'manager'
   }

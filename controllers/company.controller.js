@@ -25,13 +25,16 @@ const getAllCompanies = catchAsync(async (req, res) => {
 });
 
 // Get company by ID
+// تحديث في ملف controllers/company.controller.js
+// تعديل الدالة getCompanyById لتستخدم الاسم المستعار الجديد 'companyManager' بدلاً من 'manager'
+
 const getCompanyById = catchAsync(async (req, res, next) => {
   const includeManager = req.query.includeManager === 'true';
     
   const company = await Company.findByPk(req.params.id, {
     include: includeManager ? [{
       model: User,
-      as: 'manager',
+      as: 'companyManager',  // تغيير من 'manager' إلى 'companyManager'
       attributes: { exclude: ['password'] }
     }] : []
   });
@@ -40,12 +43,12 @@ const getCompanyById = catchAsync(async (req, res, next) => {
     return next(new AppError('Company not found', 404));
   }
   
-  // Add logo URL to company data
+  // إضافة رابط شعار الشركة إلى بيانات الشركة
   const companyWithUrl = addFileUrls(company.toJSON(), { logoImage: 'logos' });
   
-  // If manager is included, add identity image URLs to manager data
-  if (includeManager && companyWithUrl.manager) {
-    companyWithUrl.manager = addFileUrls(companyWithUrl.manager, {
+  // إذا تم تضمين المدير، أضف روابط صور الهوية إلى بيانات المدير
+  if (includeManager && companyWithUrl.companyManager) {  // تغيير من 'manager' إلى 'companyManager'
+    companyWithUrl.companyManager = addFileUrls(companyWithUrl.companyManager, {  // تغيير من 'manager' إلى 'companyManager'
       identityImage: 'identities',
       commercialRegisterImage: 'identities'
     });

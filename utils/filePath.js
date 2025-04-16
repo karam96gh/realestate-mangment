@@ -1,140 +1,71 @@
-// utils/fileHelper.js - Utilidad para ayudar con la carga y validación de archivos
+// utils/filePath.js - Helper for generating full file paths and URLs
 
-const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 
-/**
- * Verifica si un archivo existe en el sistema de archivos
- * @param {string} filePath - Ruta completa del archivo
- * @returns {boolean} - true si existe, false en caso contrario
- */
-const fileExists = (filePath) => {
-  try {
-    return fs.existsSync(filePath);
-  } catch (error) {
-    console.error(`Error verificando existencia de archivo: ${error.message}`);
-    return false;
-  }
-};
+// Base URL for file access (adjust according to your deployment)
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3101';
 
 /**
- * Obtiene la ruta completa de un archivo en el sistema de almacenamiento
- * @param {string} fileName - Nombre del archivo
- * @param {string} fileType - Tipo de archivo (contracts, identities, etc.)
- * @returns {string} - Ruta completa del archivo
+ * Get the absolute file path for a stored file
+ * @param {string} fileName - The name of the file
+ * @param {string} fileType - The type of file ('contracts', 'identities', 'checks', 'attachments', 'logos')
+ * @returns {string} The absolute file path
  */
 const getFilePath = (fileName, fileType) => {
   if (!fileName) return null;
   
   const uploadPath = UPLOAD_PATHS[fileType];
   if (!uploadPath) {
-    throw new Error(`Tipo de archivo inválido: ${fileType}`);
+    throw new Error(`Invalid file type: ${fileType}`);
   }
   
   return path.join(uploadPath, fileName);
 };
 
 /**
- * Registra información sobre los archivos recibidos en una solicitud
- * @param {Object} req - Objeto de solicitud de Express
+ * Generate a public URL for accessing the file
+ * @param {string} fileName - The name of the file
+ * @param {string} fileType - The type of file ('contracts', 'identities', 'checks', 'attachments', 'logos')
+ * @returns {string} The public URL for the file
  */
-const logRequestFiles = (req) => {
-  console.log('===== Información de archivos en la solicitud =====');
+const getFileUrl = (fileName, fileType) => {
+  if (!fileName) return null;
   
-  // Registrar información sobre req.file (para single)
-  if (req.file) {
-    console.log('req.file:', {
-      fieldname: req.file.fieldname,
-      originalname: req.file.originalname,
-      encoding: req.file.encoding,
-      mimetype: req.file.mimetype,
-      destination: req.file.destination,
-      filename: req.file.filename,
-      path: req.file.path,
-      size: req.file.size
-    });
-  } else {
-    console.log('req.file: No existe');
+  const uploadPath = UPLOAD_PATHS[fileType];
+  if (!uploadPath) {
+    throw new Error(`Invalid file type: ${fileType}`);
   }
   
-  // Registrar información sobre req.files (para multiple/fields)
-  if (req.files) {
-    console.log('req.files:');
-    Object.keys(req.files).forEach(fieldname => {
-      const files = req.files[fieldname];
-      console.log(`Campo ${fieldname}:`);
-      files.forEach((file, index) => {
-        console.log(`  Archivo ${index + 1}:`, {
-          originalname: file.originalname,
-          encoding: file.encoding,
-          mimetype: file.mimetype,
-          destination: file.destination,
-          filename: file.filename,
-          path: file.path,
-          size: file.size
-        });
-      });
-    });
-  } else {
-    console.log('req.files: No existe');
-  }
+  // Convert path like 'public/uploads/logos' to '/uploads/logos' for URL
+  const publicPath = uploadPath.replace('public', '');
   
-  // Registrar información sobre req.body
-  console.log('req.body (Campos relacionados con archivos):');
-  const fileFields = ['contractImage', 'identityImage', 'commercialRegisterImage', 
-                       'checkImage', 'attachmentFile', 'logoImage'];
-  
-  fileFields.forEach(field => {
-    if (req.body[field]) {
-      console.log(`  ${field}: ${req.body[field]}`);
-    }
-  });
-  
-  console.log('=================================================');
+  return `${BASE_URL}${publicPath}/${fileName}`;
 };
 
 /**
- * Verifica y corrige problemas comunes con los directorios de carga
+ * Add file URLs to an object containing file names
+ * @param {Object} obj - The object containing file name properties
+ * @param {Object} fileFields - Mapping of object properties to file types, e.g. {logoImage: 'logos'}
+ * @returns {Object} A new object with added URL properties
  */
-const verifyUploadDirectories = () => {
-  console.log('Verificando directorios de carga...');
+const addFileUrls = (obj, fileFields) => {
+  if (!obj) return obj;
   
-  Object.entries(UPLOAD_PATHS).forEach(([key, dir]) => {
-    try {
-      // Verificar si el directorio existe
-      if (!fs.existsSync(dir)) {
-        console.log(`Creando directorio faltante: ${dir}`);
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      
-      // Verificar permisos
-      fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK);
-      console.log(`✓ Directorio ${key} (${dir}) existe y tiene permisos correctos`);
-    } catch (error) {
-      console.error(`✗ Error con directorio ${key} (${dir}): ${error.message}`);
+  const result = { ...obj };
+  
+  Object.entries(fileFields).forEach(([field, fileType]) => {
+    if (result[field]) {
+      const urlFieldName = `${field}Url`;
+      result[urlFieldName] = getFileUrl(result[field], fileType);
     }
   });
-};
-
-/**
- * Limpia caracteres no válidos de un nombre de archivo
- * @param {string} filename - Nombre del archivo original
- * @returns {string} - Nombre de archivo limpio
- */
-const sanitizeFilename = (filename) => {
-  if (!filename) return '';
   
-  // Eliminar caracteres no válidos para nombres de archivo
-  return filename
-    .replace(/[\\/:*?"<>|]/g, '_') // Caracteres no válidos en Windows
-    .replace(/\s+/g, '_');         // Espacios a guiones bajos
+  return result;
 };
 
 module.exports = {
-  fileExists,
   getFilePath,
-  logRequestFiles,
-  verifyUploadDirectories,
-  sanitizeFilename
+  getFileUrl,
+  addFileUrls
 };

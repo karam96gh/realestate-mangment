@@ -4,6 +4,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
+require('./models/associations');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');

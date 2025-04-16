@@ -1,13 +1,17 @@
-// Database initialization 
+// تحديث ملف config/init-db.js
 const sequelize = require('./database');
-const User = require('../models/user.model');
-const Company = require('../models/company.model');
-const Building = require('../models/building.model');
-const RealEstateUnit = require('../models/realEstateUnit.model');
-const Reservation = require('../models/reservation.model');
-const ServiceOrder = require('../models/serviceOrder.model');
-const PaymentHistory = require('../models/paymentHistory.model');
 const bcrypt = require('bcryptjs');
+
+// استيراد العلاقات بين النماذج التي تتضمن جميع النماذج المعرفة
+const {
+  User,
+  Company,
+  Building,
+  RealEstateUnit,
+  Reservation,
+  ServiceOrder,
+  PaymentHistory
+} = require('../models/associations');
 
 // Initialize database and create tables
 const initializeDatabase = async () => {
@@ -17,9 +21,9 @@ const initializeDatabase = async () => {
     console.log('Database synchronized successfully');
     
     // Create default admin user
- const adminUser=   await User.create({
+    const adminUser = await User.create({
       username: 'admin',
-      password:'admin123' ,
+      password: 'admin123',
       fullName: 'System Administrator',
       email: 'admin@example.com',
       role: 'admin'

@@ -1,64 +1,75 @@
-// Reservation model 
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
-const User = require('./user.model');
-const RealEstateUnit = require('./realEstateUnit.model');
+// تحديث ملف المسارات للحجوزات
+const express = require('express');
+const router = express.Router();
+const reservationController = require('../controllers/reservation.controller');
+const authMiddleware = require('../middleware/auth.middleware');
+const { isAdminOrManager, isTenant } = require('../middleware/role.middleware');
+const { validate, reservationValidationRules } = require('../middleware/validation.middleware');
+const { multiUpload } = require('../config/upload'); // استخدام الدالة المُحسّنة للتحميل المتعدد
 
-const Reservation = sequelize.define('Reservation', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  userId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: User,
-      key: 'id'
-    }
-  },
-  unitId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: RealEstateUnit,
-      key: 'id'
-    }
-  },
-  startDate: {
-    type: DataTypes.DATEONLY,
-    allowNull: false
-  },
-  endDate: {
-    type: DataTypes.DATEONLY,
-    allowNull: false
-  },
-  contractImage: {
-    type: DataTypes.STRING(255)
-  },
-  status: {
-    type: DataTypes.ENUM('active', 'expired', 'cancelled'),
-    defaultValue: 'active'
-  },
-  notes: {
-    type: DataTypes.TEXT
-  },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  },
-  updatedAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  }
-});
+// تطبيق وسيط التحقق من الهوية على جميع المسارات
+router.use(authMiddleware);
 
-// Define associations
-Reservation.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-User.hasMany(Reservation, { foreignKey: 'userId', as: 'reservations' });
+// مسارات الحجوزات الخاصة بالمستخدم
+router.get('/my', reservationController.getMyReservations);
 
-Reservation.belongsTo(RealEstateUnit, { foreignKey: 'unitId', as: 'unit' });
-RealEstateUnit.hasMany(Reservation, { foreignKey: 'unitId', as: 'reservations' });
+// مسارات المدير/المسؤول
+router.get('/', isAdminOrManager, reservationController.getAllReservations);
 
-module.exports = Reservation;
+// الحصول على حجز حسب المعرف - متاح للمدير/المسؤول والمستأجر صاحب الحجز
+router.get('/:id', reservationController.getReservationById);
+
+// إنشاء حجز جديد (مع تحميل ملفات متعددة)
+// استخدام multiUpload لتحميل الملفات المتعددة بطريقة أفضل
+router.post(
+  '/',
+  isAdminOrManager,
+  (req, res, next) => {
+    // تهيئة middleware التحميل المتعدد
+    const upload = multiUpload();
+    upload(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ 
+          status: 'error', 
+          message: `خطأ في تحميل الملفات: ${err.message}` 
+        });
+      }
+      next();
+    });
+  },
+  reservationValidationRules,
+  validate,
+  reservationController.createReservation
+);
+
+// تحديث حجز (مع تحميل صورة العقد)
+router.put(
+  '/:id',
+  isAdminOrManager,
+  (req, res, next) => {
+    // تهيئة middleware التحميل المتعدد مع التركيز على صورة العقد
+    const upload = multiUpload();
+    upload(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ 
+          status: 'error', 
+          message: `خطأ في تحميل الملفات: ${err.message}` 
+        });
+      }
+      next();
+    });
+  },
+  validate,
+  reservationController.updateReservation
+);
+
+// حذف حجز
+router.delete('/:id', isAdminOrManager, reservationController.deleteReservation);
+
+// الحصول على الحجوزات حسب معرف الوحدة
+router.get('/unit/:unitId', isAdminOrManager, reservationController.getReservationsByUnitId);
+
+// الحصول على الحجوزات حسب معرف المستخدم - يمكن للمدير مشاهدة حجوزات أي مستخدم، ويمكن للمستأجر مشاهدة حجوزاته فقط
+router.get('/user/:userId', reservationController.getReservationsByUserId);
+
+module.exports = router;

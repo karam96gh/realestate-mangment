@@ -193,6 +193,7 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // Create new reservation (and create tenant user if not exists)
 // Actualiza esta parte del método createReservation en controllers/reservation.controller.js
 
+// تحديث دالة إنشاء الحجز لمعالجة الملفات بشكل صحيح
 const createReservation = catchAsync(async (req, res, next) => {
   console.log('بدء إنشاء الحجز');
   console.log('بيانات الطلب:', req.body);
@@ -257,28 +258,25 @@ const createReservation = catchAsync(async (req, res, next) => {
     // إنشاء اسم مستخدم وكلمة مرور
     const username = `tenant${Date.now()}`;
     
-    // معالجة صور الهوية والسجل التجاري
+    // معالجة صور الهوية والسجل التجاري - تحسين معالجة الملفات
     let identityImage = null;
     let commercialRegisterImage = null;
     
-    // التحقق من وجود ملفات مرفوعة
-    console.log('معالجة ملفات الهوية...');
+    // تحسين التحقق من وجود الملفات المرفوعة
     if (req.files) {
+      console.log('معالجة ملفات الهوية والسجل التجاري...');
+      
+      // التحقق من وجود ملف صورة الهوية
       if (req.files.identityImage && req.files.identityImage.length > 0) {
         identityImage = req.files.identityImage[0].filename;
         console.log('تم استلام صورة الهوية:', identityImage);
-      } else {
-        console.log('لم يتم العثور على صورة الهوية');
       }
       
+      // التحقق من وجود ملف السجل التجاري
       if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
         console.log('تم استلام صورة السجل التجاري:', commercialRegisterImage);
-      } else {
-        console.log('لم يتم العثور على صورة السجل التجاري');
       }
-    } else {
-      console.log('لم يتم استلام ملفات في req.files');
     }
     
     // إنشاء مستخدم جديد
@@ -305,14 +303,13 @@ const createReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // معالجة صورة العقد
+  // معالجة صورة العقد - تحسين معالجة الملفات
   let contractImage = null;
   console.log('معالجة صورة العقد...');
+  
   if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
     contractImage = req.files.contractImage[0].filename;
     console.log('تم استلام صورة العقد:', contractImage);
-  } else {
-    console.log('لم يتم العثور على صورة العقد');
   }
   
   // إنشاء الحجز
@@ -348,13 +345,10 @@ const createReservation = catchAsync(async (req, res, next) => {
     return next(new AppError('فشل في إنشاء الحجز: ' + error.message, 500));
   }
   
-  // إضافة روابط الملفات إن وجدت
-  let responseReservation = newReservation.toJSON();
-  if (contractImage) {
-    responseReservation = addFileUrls(responseReservation, { contractImage: 'contracts' });
-  }
+  // إضافة روابط الملفات إن وجدت - تحسين طريقة إضافة الروابط
+  const responseReservation = addFileUrls(newReservation.toJSON(), { contractImage: 'contracts' });
   
-  // إعادة الحجز مع بيانات المستخدم إذا تم إنشاء مستخدم جديد
+  // إعداد الاستجابة مع جميع البيانات المطلوبة
   const responseData = {
     reservation: responseReservation,
     unit: unit
@@ -362,16 +356,14 @@ const createReservation = catchAsync(async (req, res, next) => {
   
   // إذا تم إنشاء مستخدم جديد، تضمين بيانات الاعتماد
   if (!userId) {
-    let responseUser = userToAssign.toJSON();
-    
-    // إضافة روابط الصور إن وجدت
-    responseUser = addFileUrls(responseUser, {
+    // إضافة روابط الصور للمستخدم الجديد
+    const userWithUrls = addFileUrls(userToAssign.toJSON(), {
       identityImage: 'identities',
       commercialRegisterImage: 'identities'
     });
     
     responseData.newUser = {
-      ...responseUser,
+      ...userWithUrls,
       password // ترسل مرة واحدة فقط عند الإنشاء
     };
   }
@@ -385,29 +377,50 @@ const createReservation = catchAsync(async (req, res, next) => {
 });
 
 // Update reservation
+// تحسين دالة تحديث الحجز لمعالجة الملفات بشكل صحيح
 const updateReservation = catchAsync(async (req, res, next) => {
   const { startDate, endDate, status, notes } = req.body;
   
-  // Check if reservation exists
+  // التحقق من وجود الحجز
   const reservation = await Reservation.findByPk(req.params.id);
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('الحجز غير موجود', 404));
   }
   
-  // Handle contract image upload if provided
+  // معالجة صورة العقد إذا تم توفيرها - تحسين معالجة الملفات
   let contractImage = reservation.contractImage;
-  if (req.file) {
-    // Delete old contract image if it exists
+  
+  // تحسين معالجة ملف صورة العقد
+  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
+    console.log('تم استلام صورة عقد جديدة:', req.files.contractImage[0].filename);
+    
+    // حذف صورة العقد القديمة إذا كانت موجودة
     if (reservation.contractImage) {
       const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
       if (fs.existsSync(oldContractPath)) {
         fs.unlinkSync(oldContractPath);
+        console.log('تم حذف صورة العقد القديمة:', reservation.contractImage);
       }
     }
+    
+    contractImage = req.files.contractImage[0].filename;
+  } else if (req.file) {
+    // دعم الطريقة القديمة في حالة استخدام middleware مختلف
+    console.log('تم استلام صورة عقد جديدة (طريقة قديمة):', req.file.filename);
+    
+    // حذف صورة العقد القديمة إذا كانت موجودة
+    if (reservation.contractImage) {
+      const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
+      if (fs.existsSync(oldContractPath)) {
+        fs.unlinkSync(oldContractPath);
+        console.log('تم حذف صورة العقد القديمة:', reservation.contractImage);
+      }
+    }
+    
     contractImage = req.file.filename;
   }
   
-  // Update reservation
+  // تحديث الحجز
   await reservation.update({
     startDate: startDate || reservation.startDate,
     endDate: endDate || reservation.endDate,
@@ -416,20 +429,44 @@ const updateReservation = catchAsync(async (req, res, next) => {
     notes: notes || reservation.notes
   });
   
-  // If status changed to cancelled or expired, update unit status to available
+  // إذا تم تغيير الحالة إلى ملغية أو منتهية، تحديث حالة الوحدة إلى متاحة
   if ((status === 'cancelled' || status === 'expired') && reservation.status === 'active') {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
       await unit.update({ status: 'available' });
+      console.log('تم تحديث حالة الوحدة إلى: متاحة');
     }
   }
   
-  // Add contract URL to response
+  // إضافة رابط صورة العقد إلى الاستجابة - تحسين إضافة الروابط
   const reservationWithUrl = addFileUrls(reservation.toJSON(), { contractImage: 'contracts' });
+  
+  // إرفاق معلومات الوحدة والمستخدم في الاستجابة
+  const unit = await RealEstateUnit.findByPk(reservation.unitId, {
+    include: [{ 
+      model: Building, 
+      as: 'building',
+      include: [{ model: Company, as: 'company' }]
+    }]
+  });
+  
+  const user = await User.findByPk(reservation.userId, {
+    attributes: { exclude: ['password'] }
+  });
+  
+  // إضافة روابط ملفات المستخدم
+  const userWithUrls = user ? addFileUrls(user.toJSON(), {
+    identityImage: 'identities',
+    commercialRegisterImage: 'identities'
+  }) : null;
   
   res.status(200).json({
     status: 'success',
-    data: reservationWithUrl
+    data: {
+      reservation: reservationWithUrl,
+      unit: unit,
+      user: userWithUrls
+    }
   });
 });
 

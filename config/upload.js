@@ -69,6 +69,19 @@ const createUploader = (destination) => multer({
 });
 
 // Función para procesar múltiples tipos de archivos en una sola solicitud
+
+// تحسين دالة multiUpload في ملف config/upload.js
+
+/**
+ * وظيفة محسنة لمعالجة تحميل الملفات المتعددة
+ * هذه الوظيفة تتعامل بشكل أفضل مع حالات التحميل المختلفة
+ */
+// تحسين دالة multiUpload في ملف config/upload.js
+
+/**
+ * وظيفة محسنة لمعالجة تحميل الملفات المتعددة
+ * هذه الوظيفة تتعامل بشكل أفضل مع حالات التحميل المختلفة
+ */
 const multiUpload = () => {
   const uploaders = {};
   Object.entries(UPLOAD_PATHS).forEach(([key, path]) => {
@@ -76,49 +89,68 @@ const multiUpload = () => {
   });
   
   return (req, res, next) => {
-    console.log('Procesando archivos múltiples...');
-    console.log('Campos de archivo esperados:', req.body);
+    console.log('معالجة الملفات المتعددة...');
+    console.log('محتوى الطلب:', req.body);
     
-    // Determinar qué tipos de archivos se están cargando
-    const fileTypes = [];
-    
-    if (req.is('multipart/form-data')) {
-      if (req.body.contractImage) fileTypes.push('contracts');
-      if (req.body.identityImage) fileTypes.push('identities');
-      if (req.body.commercialRegisterImage) fileTypes.push('identities');
-      if (req.body.checkImage) fileTypes.push('checks');
-      if (req.body.attachmentFile) fileTypes.push('attachments');
-      if (req.body.logoImage) fileTypes.push('logos');
-    }
-    
-    // Si no hay archivos para cargar, continuar
-    if (fileTypes.length === 0) {
-      console.log('No se detectaron archivos para procesar');
+    // إذا لم يكن هناك ملفات مرفقة، مواصلة التنفيذ
+    if (!req.is('multipart/form-data')) {
+      console.log('لا توجد ملفات للمعالجة، نوع الطلب ليس multipart/form-data');
       return next();
     }
+
+    // تحضير الملفات المراد تحميلها
+    const fileFields = [
+      { name: 'contractImage', type: 'contracts' },
+      { name: 'identityImage', type: 'identities' },
+      { name: 'commercialRegisterImage', type: 'identities' },
+      { name: 'checkImage', type: 'checks' },
+      { name: 'attachmentFile', type: 'attachments' },
+      { name: 'logoImage', type: 'logos' }
+    ];
     
-    // Procesar cada tipo de archivo
-    let currentIndex = 0;
-    const processNextFileType = (err) => {
-      if (err) {
-        console.error('Error procesando archivo:', err);
-        return next(err);
-      }
-      
-      if (currentIndex >= fileTypes.length) {
-        console.log('Todos los archivos procesados correctamente');
+    // معالجة الملفات واحدًا تلو الآخر
+    let processedFields = 0;
+    const errors = [];
+
+    // إنشاء كائن req.files إذا لم يكن موجودًا
+    if (!req.files) {
+      req.files = {};
+    }
+    
+    // معالجة كل حقل ملف
+    const processField = (fieldIndex) => {
+      if (fieldIndex >= fileFields.length) {
+        if (errors.length > 0) {
+          return next(new Error(`أخطاء في تحميل الملفات: ${errors.join(', ')}`));
+        }
+        console.log('تم معالجة جميع حقول الملفات بنجاح');
         return next();
       }
       
-      const fileType = fileTypes[currentIndex++];
-      console.log(`Procesando archivo tipo: ${fileType}`);
-      uploaders[fileType].single(fileType)(req, res, processNextFileType);
+      const field = fileFields[fieldIndex];
+      const uploader = uploaders[field.type];
+      
+      // استخدام دالة multer لمعالجة الملف
+      uploader.single(field.name)(req, res, (err) => {
+        if (err) {
+          console.error(`خطأ في معالجة الملف ${field.name}:`, err);
+          errors.push(`${field.name}: ${err.message}`);
+        } else if (req.file) {
+          // إذا تم تحميل الملف، إضافته إلى req.files
+          req.files[field.name] = [req.file];
+          console.log(`تم معالجة الملف ${field.name} بنجاح:`, req.file.filename);
+          delete req.file; // مسح req.file لتجنب تداخل الملفات
+        }
+        
+        // معالجة الحقل التالي
+        processField(fieldIndex + 1);
+      });
     };
     
-    processNextFileType(null);
+    // بدء معالجة الحقول
+    processField(0);
   };
 };
-
 // Exportar middlewares de carga
 module.exports = {
   contractUpload: createUploader(UPLOAD_PATHS.contracts),

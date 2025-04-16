@@ -194,9 +194,9 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // Actualiza esta parte del método createReservation en controllers/reservation.controller.js
 
 const createReservation = catchAsync(async (req, res, next) => {
-  console.log('Iniciando creación de reserva');
-  console.log('Datos del body:', req.body);
-  console.log('Archivos recibidos:', req.files);
+  console.log('بدء إنشاء الحجز');
+  console.log('بيانات الطلب:', req.body);
+  console.log('الملفات المستلمة:', req.files);
 
   const {
     userId,
@@ -204,7 +204,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     startDate,
     endDate,
     notes,
-    // User info if new user is to be created
+    // معلومات المستخدم إذا كان سيتم إنشاء مستخدم جديد
     fullName,
     email,
     phone
@@ -212,88 +212,111 @@ const createReservation = catchAsync(async (req, res, next) => {
   
   const password = generatePassword(10);
 
-  // Check if unit exists and is available
+  // التحقق من وجود الوحدة وتوفرها
   const unit = await RealEstateUnit.findByPk(unitId);
   if (!unit) {
-    return next(new AppError('Unit not found', 404));
+    return next(new AppError('الوحدة غير موجودة', 404));
   }
   
   if (unit.status !== 'available') {
-    return next(new AppError('Unit is not available for reservation', 400));
+    return next(new AppError('الوحدة غير متاحة للحجز', 400));
+  }
+  
+  // التحقق من عدم وجود حجوزات متداخلة
+  const overlappingReservation = await Reservation.findOne({
+    where: {
+      unitId,
+      status: 'active',
+      [Op.or]: [
+        {
+          startDate: { [Op.lte]: endDate },
+          endDate: { [Op.gte]: startDate }
+        }
+      ]
+    }
+  });
+  
+  if (overlappingReservation) {
+    return next(new AppError('الوحدة محجوزة بالفعل خلال هذه الفترة', 400));
   }
   
   let userToAssign;
     
-  // If userId is provided, use existing user
+  // إذا تم توفير userId، استخدم المستخدم الموجود
   if (userId) {
     userToAssign = await User.findByPk(userId);
     if (!userToAssign) {
-      return next(new AppError('User not found', 404));
+      return next(new AppError('المستخدم غير موجود', 404));
     }
   } else {
-    // Create new tenant user if not exists
+    // إنشاء مستخدم مستأجر جديد إذا لم يكن موجودًا
     if (!fullName) {
-      return next(new AppError('Full name is required for new tenant', 400));
+      return next(new AppError('الاسم الكامل مطلوب للمستأجر الجديد', 400));
     }
     
-    // Generate username and password
+    // إنشاء اسم مستخدم وكلمة مرور
     const username = `tenant${Date.now()}`;
     
-    // Handle identity and commercial register images
+    // معالجة صور الهوية والسجل التجاري
     let identityImage = null;
     let commercialRegisterImage = null;
     
-    // Verificar si hay archivos subidos
-    console.log('Procesando archivos de identidad...');
+    // التحقق من وجود ملفات مرفوعة
+    console.log('معالجة ملفات الهوية...');
     if (req.files) {
       if (req.files.identityImage && req.files.identityImage.length > 0) {
         identityImage = req.files.identityImage[0].filename;
-        console.log('Imagen de identidad recibida:', identityImage);
+        console.log('تم استلام صورة الهوية:', identityImage);
       } else {
-        console.log('No se encontró imagen de identidad');
+        console.log('لم يتم العثور على صورة الهوية');
       }
       
       if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
-        console.log('Imagen de registro comercial recibida:', commercialRegisterImage);
+        console.log('تم استلام صورة السجل التجاري:', commercialRegisterImage);
       } else {
-        console.log('No se encontró imagen de registro comercial');
+        console.log('لم يتم العثور على صورة السجل التجاري');
       }
     } else {
-      console.log('No se recibieron archivos en req.files');
+      console.log('لم يتم استلام ملفات في req.files');
     }
     
-    // Create new user
-    console.log('Creando nuevo usuario tenant con datos:', {
+    // إنشاء مستخدم جديد
+    console.log('إنشاء مستخدم مستأجر جديد بالبيانات:', {
       username, fullName, email, phone, identityImage, commercialRegisterImage
     });
     
-    userToAssign = await User.create({
-      username,
-      password,
-      fullName,
-      email,
-      phone,
-      role: 'tenant',
-      identityImage,
-      commercialRegisterImage
-    });
-    
-    console.log('Usuario tenant creado con ID:', userToAssign.id);
+    try {
+      userToAssign = await User.create({
+        username,
+        password,
+        fullName,
+        email,
+        phone,
+        role: 'tenant',
+        identityImage,
+        commercialRegisterImage
+      });
+      
+      console.log('تم إنشاء مستخدم مستأجر بالمعرف:', userToAssign.id);
+    } catch (error) {
+      console.error('خطأ في إنشاء المستخدم:', error);
+      return next(new AppError('فشل في إنشاء حساب المستأجر: ' + error.message, 500));
+    }
   }
   
-  // Handle contract image upload
+  // معالجة صورة العقد
   let contractImage = null;
-  console.log('Procesando imagen de contrato...');
+  console.log('معالجة صورة العقد...');
   if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
     contractImage = req.files.contractImage[0].filename;
-    console.log('Imagen de contrato recibida:', contractImage);
+    console.log('تم استلام صورة العقد:', contractImage);
   } else {
-    console.log('No se encontró imagen de contrato');
+    console.log('لم يتم العثور على صورة العقد');
   }
   
-  // Create reservation
-  console.log('Creando reserva con datos:', {
+  // إنشاء الحجز
+  console.log('إنشاء حجز بالبيانات:', {
     userId: userToAssign.id,
     unitId,
     startDate,
@@ -303,54 +326,57 @@ const createReservation = catchAsync(async (req, res, next) => {
     notes
   });
   
-  const newReservation = await Reservation.create({
-    userId: userToAssign.id,
-    unitId,
-    startDate,
-    endDate,
-    contractImage,
-    status: 'active',
-    notes
-  });
+  let newReservation;
+  try {
+    newReservation = await Reservation.create({
+      userId: userToAssign.id,
+      unitId,
+      startDate,
+      endDate,
+      contractImage,
+      status: 'active',
+      notes
+    });
+    
+    console.log('تم إنشاء الحجز بالمعرف:', newReservation.id);
+    
+    // تحديث حالة الوحدة إلى مؤجرة
+    await unit.update({ status: 'rented' });
+    console.log('تم تحديث حالة الوحدة إلى: مؤجرة');
+  } catch (error) {
+    console.error('خطأ في إنشاء الحجز:', error);
+    return next(new AppError('فشل في إنشاء الحجز: ' + error.message, 500));
+  }
   
-  console.log('Reserva creada con ID:', newReservation.id);
-  
-  // Update unit status to rented
-  await unit.update({ status: 'rented' });
-  console.log('Estado de la unidad actualizado a: rented');
-  
-  // Add file URLs if available
+  // إضافة روابط الملفات إن وجدت
   let responseReservation = newReservation.toJSON();
   if (contractImage) {
-    responseReservation.contractImageUrl = `/uploads/contracts/${contractImage}`;
+    responseReservation = addFileUrls(responseReservation, { contractImage: 'contracts' });
   }
   
-  // Return reservation with user credentials if a new user was created
+  // إعادة الحجز مع بيانات المستخدم إذا تم إنشاء مستخدم جديد
   const responseData = {
     reservation: responseReservation,
     unit: unit
   };
   
-  // If new user was created, include credentials
+  // إذا تم إنشاء مستخدم جديد، تضمين بيانات الاعتماد
   if (!userId) {
     let responseUser = userToAssign.toJSON();
     
-    // Add image URLs if available
-    if (identityImage) {
-      responseUser.identityImageUrl = `/uploads/identities/${identityImage}`;
-    }
-    
-    if (commercialRegisterImage) {
-      responseUser.commercialRegisterImageUrl = `/uploads/identities/${commercialRegisterImage}`;
-    }
+    // إضافة روابط الصور إن وجدت
+    responseUser = addFileUrls(responseUser, {
+      identityImage: 'identities',
+      commercialRegisterImage: 'identities'
+    });
     
     responseData.newUser = {
       ...responseUser,
-      password // Only sent once when created
+      password // ترسل مرة واحدة فقط عند الإنشاء
     };
   }
   
-  console.log('Reserva completada con éxito');
+  console.log('تم إكمال الحجز بنجاح');
   
   res.status(201).json({
     status: 'success',

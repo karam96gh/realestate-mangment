@@ -191,7 +191,13 @@ const getReservationById = catchAsync(async (req, res, next) => {
 });
 
 // Create new reservation (and create tenant user if not exists)
+// Actualiza esta parte del método createReservation en controllers/reservation.controller.js
+
 const createReservation = catchAsync(async (req, res, next) => {
+  console.log('Iniciando creación de reserva');
+  console.log('Datos del body:', req.body);
+  console.log('Archivos recibidos:', req.files);
+
   const {
     userId,
     unitId,
@@ -203,6 +209,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     email,
     phone
   } = req.body;
+  
   const password = generatePassword(10);
 
   // Check if unit exists and is available
@@ -236,16 +243,31 @@ const createReservation = catchAsync(async (req, res, next) => {
     let identityImage = null;
     let commercialRegisterImage = null;
     
+    // Verificar si hay archivos subidos
+    console.log('Procesando archivos de identidad...');
     if (req.files) {
-      if (req.files.identityImage) {
+      if (req.files.identityImage && req.files.identityImage.length > 0) {
         identityImage = req.files.identityImage[0].filename;
+        console.log('Imagen de identidad recibida:', identityImage);
+      } else {
+        console.log('No se encontró imagen de identidad');
       }
-      if (req.files.commercialRegisterImage) {
+      
+      if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
+        console.log('Imagen de registro comercial recibida:', commercialRegisterImage);
+      } else {
+        console.log('No se encontró imagen de registro comercial');
       }
+    } else {
+      console.log('No se recibieron archivos en req.files');
     }
     
     // Create new user
+    console.log('Creando nuevo usuario tenant con datos:', {
+      username, fullName, email, phone, identityImage, commercialRegisterImage
+    });
+    
     userToAssign = await User.create({
       username,
       password,
@@ -256,15 +278,31 @@ const createReservation = catchAsync(async (req, res, next) => {
       identityImage,
       commercialRegisterImage
     });
+    
+    console.log('Usuario tenant creado con ID:', userToAssign.id);
   }
   
   // Handle contract image upload
   let contractImage = null;
-  if (req.files && req.files.contractImage) {
+  console.log('Procesando imagen de contrato...');
+  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
     contractImage = req.files.contractImage[0].filename;
+    console.log('Imagen de contrato recibida:', contractImage);
+  } else {
+    console.log('No se encontró imagen de contrato');
   }
   
   // Create reservation
+  console.log('Creando reserva con datos:', {
+    userId: userToAssign.id,
+    unitId,
+    startDate,
+    endDate,
+    contractImage,
+    status: 'active',
+    notes
+  });
+  
   const newReservation = await Reservation.create({
     userId: userToAssign.id,
     unitId,
@@ -275,30 +313,44 @@ const createReservation = catchAsync(async (req, res, next) => {
     notes
   });
   
+  console.log('Reserva creada con ID:', newReservation.id);
+  
   // Update unit status to rented
   await unit.update({ status: 'rented' });
+  console.log('Estado de la unidad actualizado a: rented');
   
-  // Add file URLs
-  const reservationWithUrl = addFileUrls(newReservation.toJSON(), { contractImage: 'contracts' });
+  // Add file URLs if available
+  let responseReservation = newReservation.toJSON();
+  if (contractImage) {
+    responseReservation.contractImageUrl = `/uploads/contracts/${contractImage}`;
+  }
   
   // Return reservation with user credentials if a new user was created
   const responseData = {
-    reservation: reservationWithUrl,
+    reservation: responseReservation,
     unit: unit
   };
   
-  // If new user was created, include credentials and URLs for uploaded files
+  // If new user was created, include credentials
   if (!userId) {
-    const userWithUrls = addFileUrls(userToAssign.toJSON(), {
-      identityImage: 'identities',
-      commercialRegisterImage: 'identities'
-    });
+    let responseUser = userToAssign.toJSON();
+    
+    // Add image URLs if available
+    if (identityImage) {
+      responseUser.identityImageUrl = `/uploads/identities/${identityImage}`;
+    }
+    
+    if (commercialRegisterImage) {
+      responseUser.commercialRegisterImageUrl = `/uploads/identities/${commercialRegisterImage}`;
+    }
     
     responseData.newUser = {
-      ...userWithUrls,
-      password: password, // Only sent once when created
+      ...responseUser,
+      password // Only sent once when created
     };
   }
+  
+  console.log('Reserva completada con éxito');
   
   res.status(201).json({
     status: 'success',

@@ -9,59 +9,44 @@ const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
-const { addFileUrls } = require('../utils/filePath');
+
 
 const getMyReservations = catchAsync(async (req, res) => {
-  // Get reservations for the authenticated user
-  console.log('User ID:', req.user.id);
-  
-  // First check if the user exists
-  const user = await User.findByPk(req.user.id);
-  if (!user) {
-    console.log('User not found in database');
-    return res.status(404).json({
-      status: 'fail',
-      message: 'User not found'
+    // Get reservations for the authenticated user
+    console.log('User ID:', req.user.id);
+    
+    // First check if the user exists
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      console.log('User not found in database');
+      return res.status(404).json({
+        status: 'fail',
+        message: 'User not found'
+      });
+    }
+    
+    // Count reservations for this user
+    const reservationCount = await Reservation.count({
+      where: { userId: req.user.id }
     });
-  }
-  
-  // Count reservations for this user
-  const reservationCount = await Reservation.count({
-    where: { userId: req.user.id }
+    console.log('Reservation count for this user:', reservationCount);
+    
+    // Get the reservations
+    const reservations = await Reservation.findAll({
+      where: { userId: req.user.id },
+    //   include: [
+    //     { model: RealEstateUnit, as: 'unit' }
+    //   ],
+      order: [['createdAt', 'DESC']]
+    });
+    
+    // Return empty array if no reservations found
+    res.status(200).json({
+      status: 'success',
+      results: reservations.length,
+      data: reservations
+    });
   });
-  console.log('Reservation count for this user:', reservationCount);
-  
-  // Get the reservations with unit and building information
-  const reservations = await Reservation.findAll({
-    where: { userId: req.user.id },
-    include: [
-      { 
-        model: RealEstateUnit, 
-        as: 'unit',
-        include: [
-          {
-            model: Building,
-            as: 'building'
-          }
-        ] 
-      }
-    ],
-    order: [['createdAt', 'DESC']]
-  });
-  
-  // Add file URLs to each reservation
-  const reservationsWithUrls = reservations.map(reservation => 
-    addFileUrls(reservation.toJSON(), { contractImage: 'contracts' })
-  );
-  
-  // Return empty array if no reservations found
-  res.status(200).json({
-    status: 'success',
-    results: reservations.length,
-    data: reservationsWithUrls
-  });
-});
-
 // Get all reservations
 const getAllReservations = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الحجوزات
@@ -113,28 +98,10 @@ const getAllReservations = catchAsync(async (req, res, next) => {
     include: includeOptions
   });
   
-  // Add file URLs to reservations and users
-  const reservationsWithUrls = reservations.map(reservation => {
-    const reservationJson = reservation.toJSON();
-    
-    // Add contract URL to reservation
-    const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
-    
-    // Add identity URLs to user if present
-    if (reservationWithUrl.user) {
-      reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
-        identityImage: 'identities',
-        commercialRegisterImage: 'identities'
-      });
-    }
-    
-    return reservationWithUrl;
-  });
-  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservationsWithUrls
+    data: reservations
   });
 });
 
@@ -170,34 +137,18 @@ const getReservationById = catchAsync(async (req, res, next) => {
     }
   }
   
-  // Add file URLs to reservation and user
-  const reservationJson = reservation.toJSON();
-  
-  // Add contract URL to reservation
-  const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
-  
-  // Add identity URLs to user if present
-  if (reservationWithUrl.user) {
-    reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
-      identityImage: 'identities',
-      commercialRegisterImage: 'identities'
-    });
-  }
-  
   res.status(200).json({
     status: 'success',
-    data: reservationWithUrl
+    data: reservation
   });
 });
 
-// Create new reservation (and create tenant user if not exists)
-// Actualiza esta parte del método createReservation en controllers/reservation.controller.js
+// Get reservation by ID
 
-// تحديث دالة إنشاء الحجز لمعالجة الملفات بشكل صحيح
+
+// Create new reservation (and create tenant user if not exists)
 const createReservation = catchAsync(async (req, res, next) => {
-  console.log('بدء إنشاء الحجز');
-  console.log('بيانات الطلب:', req.body);
-  console.log('الملفات المستلمة:', req.files);
+    console.log('kkkk');
 
   const {
     userId,
@@ -205,115 +156,74 @@ const createReservation = catchAsync(async (req, res, next) => {
     startDate,
     endDate,
     notes,
-    // معلومات المستخدم إذا كان سيتم إنشاء مستخدم جديد
+    // User info if new user is to be created
     fullName,
     email,
     phone
   } = req.body;
-  
   const password = generatePassword(10);
 
-  // التحقق من وجود الوحدة وتوفرها
+  // Check if unit exists and is available
   const unit = await RealEstateUnit.findByPk(unitId);
   if (!unit) {
-    return next(new AppError('الوحدة غير موجودة', 404));
+    return next(new AppError('Unit not found', 404));
   }
   
   if (unit.status !== 'available') {
-    return next(new AppError('الوحدة غير متاحة للحجز', 400));
-  }
-  
-  // التحقق من عدم وجود حجوزات متداخلة
-  const overlappingReservation = await Reservation.findOne({
-    where: {
-      unitId,
-      status: 'active',
-      [Op.or]: [
-        {
-          startDate: { [Op.lte]: endDate },
-          endDate: { [Op.gte]: startDate }
-        }
-      ]
-    }
-  });
-  
-  if (overlappingReservation) {
-    return next(new AppError('الوحدة محجوزة بالفعل خلال هذه الفترة', 400));
+    return next(new AppError('Unit is not available for reservation', 400));
   }
   
   let userToAssign;
     
-  // إذا تم توفير userId، استخدم المستخدم الموجود
+  // If userId is provided, use existing user
   if (userId) {
     userToAssign = await User.findByPk(userId);
     if (!userToAssign) {
-      return next(new AppError('المستخدم غير موجود', 404));
+      return next(new AppError('User not found', 404));
     }
   } else {
-    // إنشاء مستخدم مستأجر جديد إذا لم يكن موجودًا
+    // Create new tenant user if not exists
     if (!fullName) {
-      return next(new AppError('الاسم الكامل مطلوب للمستأجر الجديد', 400));
+      return next(new AppError('Full name is required for new tenant', 400));
     }
     
-    // إنشاء اسم مستخدم وكلمة مرور
+    // Generate username and password
     const username = `tenant${Date.now()}`;
     
-    // معالجة صور الهوية والسجل التجاري - تحسين معالجة الملفات
+    // Handle identity and commercial register images
     let identityImage = null;
     let commercialRegisterImage = null;
     
-    // تحسين التحقق من وجود الملفات المرفوعة
     if (req.files) {
-      console.log('معالجة ملفات الهوية والسجل التجاري...');
-      
-      // التحقق من وجود ملف صورة الهوية
-      if (req.files.identityImage && req.files.identityImage.length > 0) {
+      if (req.files.identityImage) {
         identityImage = req.files.identityImage[0].filename;
-        console.log('تم استلام صورة الهوية:', identityImage);
       }
-      
-      // التحقق من وجود ملف السجل التجاري
-      if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
+      if (req.files.commercialRegisterImage) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
-        console.log('تم استلام صورة السجل التجاري:', commercialRegisterImage);
       }
     }
     
-    // إنشاء مستخدم جديد
-    console.log('إنشاء مستخدم مستأجر جديد بالبيانات:', {
-      username, fullName, email, phone, identityImage, commercialRegisterImage
+    // Create new user
+    userToAssign = await User.create({
+      username,
+      password,
+      fullName,
+      email,
+      phone,
+      role: 'tenant',
+      identityImage,
+      commercialRegisterImage
     });
-    
-    try {
-      userToAssign = await User.create({
-        username,
-        password,
-        fullName,
-        email,
-        phone,
-        role: 'tenant',
-        identityImage,
-        commercialRegisterImage
-      });
-      
-      console.log('تم إنشاء مستخدم مستأجر بالمعرف:', userToAssign.id);
-    } catch (error) {
-      console.error('خطأ في إنشاء المستخدم:', error);
-      return next(new AppError('فشل في إنشاء حساب المستأجر: ' + error.message, 500));
-    }
   }
   
-  // معالجة صورة العقد - تحسين معالجة الملفات
+  // Handle contract image upload
   let contractImage = null;
-  console.log('معالجة صورة العقد...');
-  
-  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
+  if (req.files && req.files.contractImage) {
     contractImage = req.files.contractImage[0].filename;
-    console.log('تم استلام صورة العقد:', contractImage);
   }
   
-  // إنشاء الحجز
-  console.log('إنشاء حجز بالبيانات:', {
+  // Create reservation
+  const newReservation = await Reservation.create({
     userId: userToAssign.id,
     unitId,
     startDate,
@@ -323,52 +233,24 @@ const createReservation = catchAsync(async (req, res, next) => {
     notes
   });
   
-  let newReservation;
-  try {
-    newReservation = await Reservation.create({
-      userId: userToAssign.id,
-      unitId,
-      startDate,
-      endDate,
-      contractImage,
-      status: 'active',
-      notes
-    });
-    
-    console.log('تم إنشاء الحجز بالمعرف:', newReservation.id);
-    
-    // تحديث حالة الوحدة إلى مؤجرة
-    await unit.update({ status: 'rented' });
-    console.log('تم تحديث حالة الوحدة إلى: مؤجرة');
-  } catch (error) {
-    console.error('خطأ في إنشاء الحجز:', error);
-    return next(new AppError('فشل في إنشاء الحجز: ' + error.message, 500));
-  }
+  // Update unit status to rented
+  await unit.update({ status: 'rented' });
   
-  // إضافة روابط الملفات إن وجدت - تحسين طريقة إضافة الروابط
-  const responseReservation = addFileUrls(newReservation.toJSON(), { contractImage: 'contracts' });
-  
-  // إعداد الاستجابة مع جميع البيانات المطلوبة
+  // Return reservation with user credentials if a new user was created
   const responseData = {
-    reservation: responseReservation,
+    reservation: newReservation,
     unit: unit
   };
   
-  // إذا تم إنشاء مستخدم جديد، تضمين بيانات الاعتماد
+  // If new user was created, include credentials
   if (!userId) {
-    // إضافة روابط الصور للمستخدم الجديد
-    const userWithUrls = addFileUrls(userToAssign.toJSON(), {
-      identityImage: 'identities',
-      commercialRegisterImage: 'identities'
-    });
-    
     responseData.newUser = {
-      ...userWithUrls,
-      password // ترسل مرة واحدة فقط عند الإنشاء
+      id: userToAssign.id,
+      username: userToAssign.username,
+      password: password, // Only sent once when created
+      fullName: userToAssign.fullName
     };
   }
-  
-  console.log('تم إكمال الحجز بنجاح');
   
   res.status(201).json({
     status: 'success',
@@ -377,50 +259,29 @@ const createReservation = catchAsync(async (req, res, next) => {
 });
 
 // Update reservation
-// تحسين دالة تحديث الحجز لمعالجة الملفات بشكل صحيح
 const updateReservation = catchAsync(async (req, res, next) => {
   const { startDate, endDate, status, notes } = req.body;
   
-  // التحقق من وجود الحجز
+  // Check if reservation exists
   const reservation = await Reservation.findByPk(req.params.id);
   if (!reservation) {
-    return next(new AppError('الحجز غير موجود', 404));
+    return next(new AppError('Reservation not found', 404));
   }
   
-  // معالجة صورة العقد إذا تم توفيرها - تحسين معالجة الملفات
+  // Handle contract image upload if provided
   let contractImage = reservation.contractImage;
-  
-  // تحسين معالجة ملف صورة العقد
-  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
-    console.log('تم استلام صورة عقد جديدة:', req.files.contractImage[0].filename);
-    
-    // حذف صورة العقد القديمة إذا كانت موجودة
+  if (req.file) {
+    // Delete old contract image if it exists
     if (reservation.contractImage) {
       const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
       if (fs.existsSync(oldContractPath)) {
         fs.unlinkSync(oldContractPath);
-        console.log('تم حذف صورة العقد القديمة:', reservation.contractImage);
       }
     }
-    
-    contractImage = req.files.contractImage[0].filename;
-  } else if (req.file) {
-    // دعم الطريقة القديمة في حالة استخدام middleware مختلف
-    console.log('تم استلام صورة عقد جديدة (طريقة قديمة):', req.file.filename);
-    
-    // حذف صورة العقد القديمة إذا كانت موجودة
-    if (reservation.contractImage) {
-      const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
-      if (fs.existsSync(oldContractPath)) {
-        fs.unlinkSync(oldContractPath);
-        console.log('تم حذف صورة العقد القديمة:', reservation.contractImage);
-      }
-    }
-    
     contractImage = req.file.filename;
   }
   
-  // تحديث الحجز
+  // Update reservation
   await reservation.update({
     startDate: startDate || reservation.startDate,
     endDate: endDate || reservation.endDate,
@@ -429,44 +290,17 @@ const updateReservation = catchAsync(async (req, res, next) => {
     notes: notes || reservation.notes
   });
   
-  // إذا تم تغيير الحالة إلى ملغية أو منتهية، تحديث حالة الوحدة إلى متاحة
+  // If status changed to cancelled or expired, update unit status to available
   if ((status === 'cancelled' || status === 'expired') && reservation.status === 'active') {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
       await unit.update({ status: 'available' });
-      console.log('تم تحديث حالة الوحدة إلى: متاحة');
     }
   }
   
-  // إضافة رابط صورة العقد إلى الاستجابة - تحسين إضافة الروابط
-  const reservationWithUrl = addFileUrls(reservation.toJSON(), { contractImage: 'contracts' });
-  
-  // إرفاق معلومات الوحدة والمستخدم في الاستجابة
-  const unit = await RealEstateUnit.findByPk(reservation.unitId, {
-    include: [{ 
-      model: Building, 
-      as: 'building',
-      include: [{ model: Company, as: 'company' }]
-    }]
-  });
-  
-  const user = await User.findByPk(reservation.userId, {
-    attributes: { exclude: ['password'] }
-  });
-  
-  // إضافة روابط ملفات المستخدم
-  const userWithUrls = user ? addFileUrls(user.toJSON(), {
-    identityImage: 'identities',
-    commercialRegisterImage: 'identities'
-  }) : null;
-  
   res.status(200).json({
     status: 'success',
-    data: {
-      reservation: reservationWithUrl,
-      unit: unit,
-      user: userWithUrls
-    }
+    data: reservation
   });
 });
 
@@ -511,28 +345,10 @@ const getReservationsByUnitId = catchAsync(async (req, res) => {
     ]
   });
   
-  // Add contract URLs and user identity URLs
-  const reservationsWithUrls = reservations.map(reservation => {
-    const reservationJson = reservation.toJSON();
-    
-    // Add contract URL
-    const reservationWithUrl = addFileUrls(reservationJson, { contractImage: 'contracts' });
-    
-    // Add user identity URLs if present
-    if (reservationWithUrl.user) {
-      reservationWithUrl.user = addFileUrls(reservationWithUrl.user, {
-        identityImage: 'identities',
-        commercialRegisterImage: 'identities'
-      });
-    }
-    
-    return reservationWithUrl;
-  });
-  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservationsWithUrls
+    data: reservations
   });
 });
 
@@ -545,15 +361,10 @@ const getReservationsByUserId = catchAsync(async (req, res) => {
     ]
   });
   
-  // Add contract URLs
-  const reservationsWithUrls = reservations.map(reservation => 
-    addFileUrls(reservation.toJSON(), { contractImage: 'contracts' })
-  );
-  
   res.status(200).json({
     status: 'success',
     results: reservations.length,
-    data: reservationsWithUrls
+    data: reservations
   });
 });
 

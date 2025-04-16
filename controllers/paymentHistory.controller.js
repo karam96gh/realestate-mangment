@@ -10,7 +10,6 @@ const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
-const { addFileUrls } = require('../utils/filePath');
 
 // الحصول على جميع الدفعات
 const getAllPayments = catchAsync(async (req, res, next) => {
@@ -76,15 +75,10 @@ const getAllPayments = catchAsync(async (req, res, next) => {
     include: includeOptions
   });
   
-  // إضافة روابط الملفات لكل دفعة
-  const paymentsWithUrls = payments.map(payment => 
-    addFileUrls(payment.toJSON(), { checkImage: 'checks' })
-  );
-  
   res.status(200).json({
     status: 'success',
     results: payments.length,
-    data: paymentsWithUrls
+    data: payments
   });
 });
 
@@ -128,12 +122,9 @@ const getPaymentById = catchAsync(async (req, res, next) => {
     }
   }
   
-  // إضافة رابط صورة الشيك
-  const paymentWithUrl = addFileUrls(payment.toJSON(), { checkImage: 'checks' });
-  
   res.status(200).json({
     status: 'success',
-    data: paymentWithUrl
+    data: payment
   });
 });
 
@@ -190,12 +181,9 @@ const createPayment = catchAsync(async (req, res, next) => {
     notes
   });
   
-  // إضافة رابط صورة الشيك
-  const paymentWithUrl = addFileUrls(newPayment.toJSON(), { checkImage: 'checks' });
-  
   res.status(201).json({
     status: 'success',
-    data: paymentWithUrl
+    data: newPayment
   });
 });
 
@@ -262,12 +250,9 @@ const updatePayment = catchAsync(async (req, res, next) => {
     notes: notes || payment.notes
   });
   
-  // إضافة رابط صورة الشيك
-  const paymentWithUrl = addFileUrls(payment.toJSON(), { checkImage: 'checks' });
-  
   res.status(200).json({
     status: 'success',
-    data: paymentWithUrl
+    data: payment
   });
 });
 
@@ -365,15 +350,10 @@ const getPaymentsByReservationId = catchAsync(async (req, res, next) => {
     where: { reservationId }
   });
   
-  // إضافة روابط صور الشيكات
-  const paymentsWithUrls = payments.map(payment => 
-    addFileUrls(payment.toJSON(), { checkImage: 'checks' })
-  );
-  
   res.status(200).json({
     status: 'success',
     results: payments.length,
-    data: paymentsWithUrls
+    data: payments
   });
 });
 

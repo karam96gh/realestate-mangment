@@ -9,7 +9,6 @@ const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
-const { addFileUrls } = require('../utils/filePath');
 
 // Get all service orders
 const getAllServiceOrders = catchAsync(async (req, res, next) => {
@@ -49,15 +48,10 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     include: includeOptions
   });
   
-  // Add attachment URLs to each service order
-  const serviceOrdersWithUrls = serviceOrders.map(order => 
-    addFileUrls(order.toJSON(), { attachmentFile: 'attachments' })
-  );
-  
   res.status(200).json({
     status: 'success',
     results: serviceOrders.length,
-    data: serviceOrdersWithUrls
+    data: serviceOrders
   });
 });
 
@@ -98,14 +92,13 @@ const getServiceOrderById = catchAsync(async (req, res, next) => {
     }
   }
   
-  // Add attachment URL to service order
-  const serviceOrderWithUrl = addFileUrls(serviceOrder.toJSON(), { attachmentFile: 'attachments' });
-  
   res.status(200).json({
     status: 'success',
-    data: serviceOrderWithUrl
+    data: serviceOrder
   });
 });
+// Get service order by ID
+
 
 // Create new service order
 const createServiceOrder = catchAsync(async (req, res, next) => {
@@ -139,12 +132,9 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
     status: 'pending'
   });
   
-  // Add attachment URL to response
-  const serviceOrderWithUrl = addFileUrls(newServiceOrder.toJSON(), { attachmentFile: 'attachments' });
-  
   res.status(201).json({
     status: 'success',
-    data: serviceOrderWithUrl
+    data: newServiceOrder
   });
 });
 
@@ -195,12 +185,9 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     status: status || serviceOrder.status
   });
   
-  // Add attachment URL to response
-  const serviceOrderWithUrl = addFileUrls(serviceOrder.toJSON(), { attachmentFile: 'attachments' });
-  
   res.status(200).json({
     status: 'success',
-    data: serviceOrderWithUrl
+    data: serviceOrder
   });
 });
 
@@ -262,15 +249,10 @@ const getServiceOrdersByReservationId = catchAsync(async (req, res, next) => {
     ]
   });
   
-  // Add attachment URLs to service orders
-  const serviceOrdersWithUrls = serviceOrders.map(order => 
-    addFileUrls(order.toJSON(), { attachmentFile: 'attachments' })
-  );
-  
   res.status(200).json({
     status: 'success',
     results: serviceOrders.length,
-    data: serviceOrdersWithUrls
+    data: serviceOrders
   });
 });
 

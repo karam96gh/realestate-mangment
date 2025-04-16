@@ -4,7 +4,7 @@ const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 
 // Base URL for file access (adjust according to your deployment)
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3101';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 /**
  * Get the absolute file path for a stored file

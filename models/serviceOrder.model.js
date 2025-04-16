@@ -1,10 +1,9 @@
-// إصلاح مشكلة العلاقات في نموذج ServiceOrder
+// Service Order model 
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
+const User = require('./user.model');
+const Reservation = require('./reservation.model');
 
-// استخدام الاستيراد الحذر لتجنب المشاكل الدائرية
-// تأكد من أن هذه النماذج موجودة ومعرفة بشكل صحيح
-// نستورد هيكل النموذج فقط بدون العلاقات في هذه المرحلة
 const ServiceOrder = sequelize.define('ServiceOrder', {
   id: {
     type: DataTypes.INTEGER,
@@ -15,7 +14,7 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Users', // استخدام اسم الجدول بدلاً من النموذج المستورد
+      model: User,
       key: 'id'
     }
   },
@@ -23,7 +22,7 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Reservations', // استخدام اسم الجدول بدلاً من النموذج المستورد
+      model: Reservation,
       key: 'id'
     }
   },
@@ -56,7 +55,11 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
   }
 });
 
-// سننقل تعريف العلاقات إلى ملف منفصل لتجنب مشاكل الاعتماد الدائري
-// يتم تعريف العلاقات في ملف associations.js بعد تعريف جميع النماذج
+// Define associations
+ServiceOrder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(ServiceOrder, { foreignKey: 'userId', as: 'serviceOrders' });
+
+ServiceOrder.belongsTo(Reservation, { foreignKey: 'reservationId', as: 'reservation' });
+Reservation.hasMany(ServiceOrder, { foreignKey: 'reservationId', as: 'serviceOrders' });
 
 module.exports = ServiceOrder;

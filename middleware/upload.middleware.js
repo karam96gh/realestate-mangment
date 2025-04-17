@@ -60,11 +60,7 @@ const uploadReservationFiles = (req, res, next) => {
   });
 };
 
-// Export the new middleware
-module.exports = {
-  // ...existing exports
-  uploadReservationFiles
-};
+
 // Handle multer errors
 const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
@@ -118,4 +114,8 @@ const uploadMiddleware = {
   }
 };
 
-module.exports = uploadMiddleware;
+// Export the new middleware
+module.exports = {
+  // ...existing exports
+  uploadReservationFiles,uploadMiddleware
+};

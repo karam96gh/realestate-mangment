@@ -1,8 +1,10 @@
-// Reservation model 
+// models/reservation.model.js
+
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./user.model');
 const RealEstateUnit = require('./realEstateUnit.model');
+const { getFileUrl } = require('../utils/filePath');
 
 const Reservation = sequelize.define('Reservation', {
   id: {
@@ -37,6 +39,12 @@ const Reservation = sequelize.define('Reservation', {
   contractImage: {
     type: DataTypes.STRING(255)
   },
+  contractImageUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.contractImage ? getFileUrl(this.contractImage, 'contracts') : null;
+    }
+  },
   status: {
     type: DataTypes.ENUM('active', 'expired', 'cancelled'),
     defaultValue: 'active'
@@ -54,7 +62,7 @@ const Reservation = sequelize.define('Reservation', {
   }
 });
 
-// Define associations
+// تعريف العلاقات
 Reservation.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Reservation, { foreignKey: 'userId', as: 'reservations' });
 

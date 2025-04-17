@@ -146,24 +146,24 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // Get reservation by ID
 
 
-// Create new reservation (and create tenant user if not exists)
-const createReservation = catchAsync(async (req, res, next) => {
-    console.log('kkkk');
+// controllers/reservation.controller.js - فقط الجزء الذي يحتاج تعديل
 
+// تعديل دالة createReservation لضمان إرجاع روابط الملفات
+const createReservation = catchAsync(async (req, res, next) => {
   const {
     userId,
     unitId,
     startDate,
     endDate,
     notes,
-    // User info if new user is to be created
+    // معلومات المستخدم إذا كان سيتم إنشاء مستخدم جديد
     fullName,
     email,
     phone
   } = req.body;
   const password = generatePassword(10);
 
-  // Check if unit exists and is available
+  // التحقق من وجود الوحدة وتوفرها
   const unit = await RealEstateUnit.findByPk(unitId);
   if (!unit) {
     return next(new AppError('Unit not found', 404));
@@ -175,22 +175,22 @@ const createReservation = catchAsync(async (req, res, next) => {
   
   let userToAssign;
     
-  // If userId is provided, use existing user
+  // إذا تم توفير معرف المستخدم، استخدم المستخدم الموجود
   if (userId) {
     userToAssign = await User.findByPk(userId);
     if (!userToAssign) {
       return next(new AppError('User not found', 404));
     }
   } else {
-    // Create new tenant user if not exists
+    // إنشاء مستخدم مستأجر جديد إذا لم يكن موجودًا
     if (!fullName) {
       return next(new AppError('Full name is required for new tenant', 400));
     }
     
-    // Generate username and password
+    // إنشاء اسم المستخدم وكلمة المرور
     const username = `tenant${Date.now()}`;
     
-    // Handle identity and commercial register images
+    // معالجة صور الهوية والسجل التجاري
     let identityImage = null;
     let commercialRegisterImage = null;
     
@@ -203,7 +203,7 @@ const createReservation = catchAsync(async (req, res, next) => {
       }
     }
     
-    // Create new user
+    // إنشاء مستخدم جديد
     userToAssign = await User.create({
       username,
       password,
@@ -216,13 +216,13 @@ const createReservation = catchAsync(async (req, res, next) => {
     });
   }
   
-  // Handle contract image upload
+  // معالجة رفع صورة العقد
   let contractImage = null;
   if (req.files && req.files.contractImage) {
     contractImage = req.files.contractImage[0].filename;
   }
   
-  // Create reservation
+  // إنشاء الحجز
   const newReservation = await Reservation.create({
     userId: userToAssign.id,
     unitId,
@@ -233,22 +233,25 @@ const createReservation = catchAsync(async (req, res, next) => {
     notes
   });
   
-  // Update unit status to rented
+  // تحديث حالة الوحدة إلى مؤجرة
   await unit.update({ status: 'rented' });
   
-  // Return reservation with user credentials if a new user was created
+  // إرجاع الحجز مع بيانات اعتماد المستخدم إذا تم إنشاء مستخدم جديد
   const responseData = {
-    reservation: newReservation,
+    reservation: newReservation,  // سيتضمن contractImageUrl بفضل getter المضاف
     unit: unit
   };
   
-  // If new user was created, include credentials
+  // إذا تم إنشاء مستخدم جديد، قم بتضمين بيانات الاعتماد
   if (!userId) {
     responseData.newUser = {
       id: userToAssign.id,
       username: userToAssign.username,
-      password: password, // Only sent once when created
-      fullName: userToAssign.fullName
+      password: password, // يتم إرسالها مرة واحدة فقط عند الإنشاء
+      fullName: userToAssign.fullName,
+      // تضمين روابط الصور
+      identityImageUrl: userToAssign.identityImageUrl,
+      commercialRegisterImageUrl: userToAssign.commercialRegisterImageUrl
     };
   }
   

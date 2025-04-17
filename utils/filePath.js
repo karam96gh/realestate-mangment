@@ -1,56 +1,56 @@
-// utils/filePath.js - Helper for generating full file paths and URLs
+// utils/filePath.js - تعديل لضمان التوافق مع بقية التطبيق
 
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 
-// Base URL for file access (adjust according to your deployment)
+// تعديل عنوان URL الأساسي حسب بيئة التشغيل
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 /**
- * Get the absolute file path for a stored file
- * @param {string} fileName - The name of the file
- * @param {string} fileType - The type of file ('contracts', 'identities', 'checks', 'attachments', 'logos')
- * @returns {string} The absolute file path
+ * الحصول على المسار المطلق للملف المخزن
+ * @param {string} fileName - اسم الملف
+ * @param {string} fileType - نوع الملف ('contracts', 'identities', 'checks', 'attachments', 'logos')
+ * @returns {string} المسار المطلق للملف
  */
 const getFilePath = (fileName, fileType) => {
   if (!fileName) return null;
   
   const uploadPath = UPLOAD_PATHS[fileType];
   if (!uploadPath) {
-    throw new Error(`Invalid file type: ${fileType}`);
+    throw new Error(`نوع ملف غير صالح: ${fileType}`);
   }
   
   return path.join(uploadPath, fileName);
 };
 
 /**
- * Generate a public URL for accessing the file
- * @param {string} fileName - The name of the file
- * @param {string} fileType - The type of file ('contracts', 'identities', 'checks', 'attachments', 'logos')
- * @returns {string} The public URL for the file
+ * إنشاء عنوان URL عام للوصول إلى الملف
+ * @param {string} fileName - اسم الملف
+ * @param {string} fileType - نوع الملف ('contracts', 'identities', 'checks', 'attachments', 'logos')
+ * @returns {string} عنوان URL العام للملف
  */
 const getFileUrl = (fileName, fileType) => {
   if (!fileName) return null;
   
   const uploadPath = UPLOAD_PATHS[fileType];
   if (!uploadPath) {
-    throw new Error(`Invalid file type: ${fileType}`);
+    throw new Error(`نوع ملف غير صالح: ${fileType}`);
   }
   
-  // Convert path like 'public/uploads/logos' to '/uploads/logos' for URL
+  // تحويل المسار من 'public/uploads/logos' إلى '/uploads/logos' للعنوان
   const publicPath = uploadPath.replace('public', '');
   
   return `${BASE_URL}${publicPath}/${fileName}`;
 };
 
 /**
- * Add file URLs to an object containing file names
- * @param {Object} obj - The object containing file name properties
- * @param {Object} fileFields - Mapping of object properties to file types, e.g. {logoImage: 'logos'}
- * @returns {Object} A new object with added URL properties
+ * إضافة عناوين URL للملفات إلى كائن يحتوي على أسماء ملفات
+ * @param {Object} obj - الكائن الذي يحتوي على خصائص أسماء الملفات
+ * @param {Object} fileFields - تعيين خصائص الكائن إلى أنواع الملفات، مثل {logoImage: 'logos'}
+ * @returns {Object} كائن جديد مع خصائص URL إضافية
  */
 const addFileUrls = (obj, fileFields) => {
-  if (!obj) return obj;
+  if (!obj || typeof obj !== 'object') return obj;
   
   const result = { ...obj };
   

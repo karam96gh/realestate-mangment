@@ -3,8 +3,10 @@
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const sequelize = require('../config/database');
+const { getFileUrl } = require('../utils/filePath');
 
 const User = sequelize.define('User', {
+  // الحقول الموجودة مسبقًا
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -33,8 +35,20 @@ const User = sequelize.define('User', {
   identityImage: {
     type: DataTypes.STRING(255)
   },
+  identityImageUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.identityImage ? getFileUrl(this.identityImage, 'identities') : null;
+    }
+  },
   commercialRegisterImage: {
     type: DataTypes.STRING(255)
+  },
+  commercialRegisterImageUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.commercialRegisterImage ? getFileUrl(this.commercialRegisterImage, 'identities') : null;
+    }
   },
   role: {
     type: DataTypes.ENUM('admin', 'manager', 'tenant'),
@@ -73,12 +87,12 @@ const User = sequelize.define('User', {
   }
 });
 
-// Method to validate password
+// دالة للتحقق من كلمة المرور
 User.prototype.validatePassword = async function(password) {
   return await bcrypt.compare(password, this.password);
 };
 
-// Method to return safe user object (without password)
+// طريقة لإرجاع كائن مستخدم آمن (بدون كلمة المرور)
 User.prototype.toJSON = function() {
   const values = { ...this.get() };
   delete values.password;

@@ -3,8 +3,10 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./user.model');
+const { getFileUrl } = require('../utils/filePath');
 
 const Company = sequelize.define('Company', {
+  // الحقول الموجودة مسبقًا
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -27,6 +29,12 @@ const Company = sequelize.define('Company', {
   logoImage: {
     type: DataTypes.STRING(255)
   },
+  logoImageUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.logoImage ? getFileUrl(this.logoImage, 'logos') : null;
+    }
+  },
   createdAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
@@ -37,7 +45,7 @@ const Company = sequelize.define('Company', {
   }
 });
 
-// Define association - a company has one manager
+// تعريف العلاقات
 Company.hasOne(User, {
   foreignKey: 'companyId',
   as: 'manager',
@@ -46,7 +54,6 @@ Company.hasOne(User, {
   }
 });
 
-// A manager belongs to one company
 User.belongsTo(Company, {
   foreignKey: 'companyId',
   as: 'company'

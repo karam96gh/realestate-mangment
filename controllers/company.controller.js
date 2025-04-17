@@ -41,60 +41,59 @@ const getCompanyById = catchAsync(async (req, res, next) => {
     });
   });
 
-// Create new company with manager user
-// controllers/company.controller.js
+// controllers/company.controller.js - فقط الجزء الذي يحتاج تعديل
 
-// Create new company with manager user
+// تحديث دالة createCompany لاستخدام المسارات الصحيحة وإعادة روابط الملفات
 const createCompany = catchAsync(async (req, res) => {
-    const { name, email, phone, address, managerFullName, managerEmail, managerPhone } = req.body;
-    
-    // Handle logo upload if provided
-    let logoImage = null;
-    if (req.file) {
-      logoImage = req.file.filename;
-    }
+  const { name, email, phone, address, managerFullName, managerEmail, managerPhone } = req.body;
   
-    // Create company first
-    const newCompany = await Company.create({
-      name,
-      email,
-      phone,
-      address,
-      logoImage
-    });
-  
-    // Generate manager credentials
-    const username = `manager_${newCompany.id}_${Date.now()}`;
-    const password = generatePassword(10);
-  
-    // Create manager user with companyId
-    const manager = await User.create({
-      username,
-      password,
-      fullName: managerFullName || `${name} Manager`,
-      email: managerEmail || email,
-      phone: managerPhone || phone,
-      role: 'manager',
-      companyId: newCompany.id  // Set the companyId
-    });
-  
-    // Return both company and manager information
-    res.status(201).json({
-      status: 'success',
-      data: {
-        company: newCompany,
-        manager: {
-          id: manager.id,
-          username: manager.username,
-          password: password, // Only sent once at creation
-          fullName: manager.fullName,
-          email: manager.email,
-          role: manager.role,
-          companyId: manager.companyId
-        }
-      }
-    });
+  // معالجة رفع الشعار إذا تم توفيره
+  let logoImage = null;
+  if (req.file) {
+    logoImage = req.file.filename;
+  }
+
+  // إنشاء الشركة أولاً
+  const newCompany = await Company.create({
+    name,
+    email,
+    phone,
+    address,
+    logoImage
   });
+
+  // إنشاء بيانات اعتماد المدير
+  const username = `manager_${newCompany.id}_${Date.now()}`;
+  const password = generatePassword(10);
+
+  // إنشاء مستخدم مدير مع معرف الشركة
+  const manager = await User.create({
+    username,
+    password,
+    fullName: managerFullName || `${name} Manager`,
+    email: managerEmail || email,
+    phone: managerPhone || phone,
+    role: 'manager',
+    companyId: newCompany.id  // تعيين معرف الشركة
+  });
+
+  // إرجاع معلومات الشركة والمدير
+  res.status(201).json({
+    status: 'success',
+    data: {
+      company: newCompany,  // سيتضمن logoImageUrl بفضل getter المضاف
+      manager: {
+        id: manager.id,
+        username: manager.username,
+        password: password, // يتم إرسالها مرة واحدة فقط عند الإنشاء
+        fullName: manager.fullName,
+        email: manager.email,
+        role: manager.role,
+        companyId: manager.companyId
+      }
+    }
+  });
+});
 // Update company
 const updateCompany = catchAsync(async (req, res, next) => {
   const company = await Company.findByPk(req.params.id);

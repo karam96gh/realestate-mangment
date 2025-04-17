@@ -1,8 +1,10 @@
-// Service Order model 
+// models/serviceOrder.model.js
+
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./user.model');
 const Reservation = require('./reservation.model');
+const { getFileUrl } = require('../utils/filePath');
 
 const ServiceOrder = sequelize.define('ServiceOrder', {
   id: {
@@ -41,6 +43,12 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
   attachmentFile: {
     type: DataTypes.STRING(255)
   },
+  attachmentFileUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.attachmentFile ? getFileUrl(this.attachmentFile, 'attachments') : null;
+    }
+  },
   status: {
     type: DataTypes.ENUM('pending', 'in-progress', 'completed', 'rejected'),
     defaultValue: 'pending'
@@ -55,7 +63,7 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
   }
 });
 
-// Define associations
+// تعريف العلاقات
 ServiceOrder.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(ServiceOrder, { foreignKey: 'userId', as: 'serviceOrders' });
 

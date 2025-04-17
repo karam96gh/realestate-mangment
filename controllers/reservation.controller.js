@@ -151,6 +151,8 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // تعديل دالة createReservation لضمان إرجاع روابط الملفات
 // controllers/reservation.controller.js - updated createReservation function
 
+// controllers/reservation.controller.js - Fix for "identityImage is not defined"
+
 const createReservation = catchAsync(async (req, res, next) => {
   console.log("Files received:", req.files); // Debug log
   console.log("Form data:", req.body);       // Debug log
@@ -178,6 +180,28 @@ const createReservation = catchAsync(async (req, res, next) => {
   }
   
   let userToAssign;
+  // Define these variables outside the if block scope to access them later
+  let identityImage = null;
+  let commercialRegisterImage = null;
+  let contractImage = null;
+    
+  // Process file uploads first
+  if (req.files) {
+    if (req.files.identityImage && req.files.identityImage.length > 0) {
+      identityImage = req.files.identityImage[0].filename;
+      console.log("Identity image saved:", identityImage);
+    }
+    
+    if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
+      commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
+      console.log("Commercial register saved:", commercialRegisterImage);
+    }
+    
+    if (req.files.contractImage && req.files.contractImage.length > 0) {
+      contractImage = req.files.contractImage[0].filename;
+      console.log("Contract image saved:", contractImage);
+    }
+  }
     
   // If userId is provided, use existing user
   if (userId) {
@@ -194,23 +218,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     // Generate username and password
     const username = `tenant${Date.now()}`;
     
-    // Handle identity and commercial register images
-    let identityImage = null;
-    let commercialRegisterImage = null;
-    
-    if (req.files) {
-      if (req.files.identityImage && req.files.identityImage.length > 0) {
-        identityImage = req.files.identityImage[0].filename;
-        console.log("Identity image saved:", identityImage); // Debug log
-      }
-      
-      if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
-        commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
-        console.log("Commercial register image saved:", commercialRegisterImage); // Debug log
-      }
-    }
-    
-    // Create new user
+    // Create new user with the already processed images
     userToAssign = await User.create({
       username,
       password,
@@ -223,14 +231,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     });
   }
   
-  // Handle contract image upload
-  let contractImage = null;
-  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
-    contractImage = req.files.contractImage[0].filename;
-    console.log("Contract image saved:", contractImage); // Debug log
-  }
-  
-  // Create reservation
+  // Create reservation with the already processed contract image
   const newReservation = await Reservation.create({
     userId: userToAssign.id,
     unitId,
@@ -273,7 +274,6 @@ const createReservation = catchAsync(async (req, res, next) => {
     data: responseData
   });
 });
-
 // Update reservation
 const updateReservation = catchAsync(async (req, res, next) => {
   const { startDate, endDate, status, notes } = req.body;

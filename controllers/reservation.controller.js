@@ -149,21 +149,25 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // controllers/reservation.controller.js - فقط الجزء الذي يحتاج تعديل
 
 // تعديل دالة createReservation لضمان إرجاع روابط الملفات
+// controllers/reservation.controller.js - updated createReservation function
+
 const createReservation = catchAsync(async (req, res, next) => {
+  console.log("Files received:", req.files); // Debug log
+  console.log("Form data:", req.body);       // Debug log
+  
   const {
     userId,
     unitId,
     startDate,
     endDate,
     notes,
-    // معلومات المستخدم إذا كان سيتم إنشاء مستخدم جديد
     fullName,
     email,
     phone
   } = req.body;
   const password = generatePassword(10);
 
-  // التحقق من وجود الوحدة وتوفرها
+  // Check if unit exists and is available
   const unit = await RealEstateUnit.findByPk(unitId);
   if (!unit) {
     return next(new AppError('Unit not found', 404));
@@ -175,37 +179,38 @@ const createReservation = catchAsync(async (req, res, next) => {
   
   let userToAssign;
     
-  // إذا تم توفير معرف المستخدم، استخدم المستخدم الموجود
+  // If userId is provided, use existing user
   if (userId) {
     userToAssign = await User.findByPk(userId);
     if (!userToAssign) {
       return next(new AppError('User not found', 404));
     }
   } else {
-    // إنشاء مستخدم مستأجر جديد إذا لم يكن موجودًا
+    // Create new tenant user if not exists
     if (!fullName) {
       return next(new AppError('Full name is required for new tenant', 400));
     }
     
-    // إنشاء اسم المستخدم وكلمة المرور
+    // Generate username and password
     const username = `tenant${Date.now()}`;
     
-    // معالجة صور الهوية والسجل التجاري
+    // Handle identity and commercial register images
     let identityImage = null;
     let commercialRegisterImage = null;
     
     if (req.files) {
-      if (req.files.identityImage) {
-
+      if (req.files.identityImage && req.files.identityImage.length > 0) {
         identityImage = req.files.identityImage[0].filename;
-        console.log(identityImage);
+        console.log("Identity image saved:", identityImage); // Debug log
       }
-      if (req.files.commercialRegisterImage) {
+      
+      if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
+        console.log("Commercial register image saved:", commercialRegisterImage); // Debug log
       }
     }
     
-    // إنشاء مستخدم جديد
+    // Create new user
     userToAssign = await User.create({
       username,
       password,
@@ -218,13 +223,14 @@ const createReservation = catchAsync(async (req, res, next) => {
     });
   }
   
-  // معالجة رفع صورة العقد
+  // Handle contract image upload
   let contractImage = null;
-  if (req.files && req.files.contractImage) {
+  if (req.files && req.files.contractImage && req.files.contractImage.length > 0) {
     contractImage = req.files.contractImage[0].filename;
+    console.log("Contract image saved:", contractImage); // Debug log
   }
   
-  // إنشاء الحجز
+  // Create reservation
   const newReservation = await Reservation.create({
     userId: userToAssign.id,
     unitId,
@@ -235,25 +241,30 @@ const createReservation = catchAsync(async (req, res, next) => {
     notes
   });
   
-  // تحديث حالة الوحدة إلى مؤجرة
+  // Update unit status to rented
   await unit.update({ status: 'rented' });
   
-  // إرجاع الحجز مع بيانات اعتماد المستخدم إذا تم إنشاء مستخدم جديد
+  // Generate URLs for the files
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  
+  // Return reservation with user credentials if a new user was created
   const responseData = {
-    reservation: newReservation,  // سيتضمن contractImageUrl بفضل getter المضاف
+    reservation: {
+      ...newReservation.get({ plain: true }),
+      contractImageUrl: contractImage ? `${BASE_URL}/uploads/contracts/${contractImage}` : null
+    },
     unit: unit
   };
   
-  // إذا تم إنشاء مستخدم جديد، قم بتضمين بيانات الاعتماد
+  // If new user was created, include credentials
   if (!userId) {
     responseData.newUser = {
       id: userToAssign.id,
       username: userToAssign.username,
-      password: password, // يتم إرسالها مرة واحدة فقط عند الإنشاء
+      password: password, // Only sent once when created
       fullName: userToAssign.fullName,
-      // تضمين روابط الصور
-      identityImageUrl: userToAssign.identityImageUrl,
-      commercialRegisterImageUrl: userToAssign.commercialRegisterImageUrl
+      identityImageUrl: identityImage ? `${BASE_URL}/uploads/identities/${identityImage}` : null,
+      commercialRegisterImageUrl: commercialRegisterImage ? `${BASE_URL}/uploads/identities/${commercialRegisterImage}` : null
     };
   }
   

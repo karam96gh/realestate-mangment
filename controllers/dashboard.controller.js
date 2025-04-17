@@ -1,38 +1,48 @@
-// Dashboard controller - updated version
+// Dashboard controller - optimized version
 const sequelize = require('../config/database');
-const { QueryTypes } = require('sequelize');
+const { Op } = require('sequelize');
 const Building = require('../models/building.model');
 const RealEstateUnit = require('../models/realEstateUnit.model');
 const Reservation = require('../models/reservation.model');
 const ServiceOrder = require('../models/serviceOrder.model');
 const PaymentHistory = require('../models/paymentHistory.model');
+const Company = require('../models/company.model');
+const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 
-// Get general statistics
+// معالجة الإحصائيات العامة
 const getGeneralStatistics = catchAsync(async (req, res, next) => {
-  // تحقق من صلاحيات المستخدم وتطبيق الفلترة المناسبة
-  let whereBuildings = {};
-  let whereUnits = {};
-  let whereReservations = {};
-  let wherePayments = {};
-  let whereServiceOrders = {};
-
-  // إذا كان المستخدم مديراً، قم بفلترة البيانات حسب شركته
-  if (req.user.role === 'manager') {
-    if (!req.user.companyId) {
-      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+  try {
+    // تعريف الفلاتر حسب دور المستخدم
+    let buildingWhere = {};
+    let companyInclude = {};
+    
+    // إذا كان المستخدم مديرًا، قم بفلترة البيانات حسب شركته
+    if (req.user.role === 'manager') {
+      if (!req.user.companyId) {
+        return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+      }
+      
+      // فلترة المباني حسب الشركة
+      buildingWhere = { companyId: req.user.companyId };
+      companyInclude = { model: Company, as: 'company', where: { id: req.user.companyId } };
     }
 
-    // الحصول على معرفات المباني التابعة للشركة
+    // 1. إحصاء المباني
+    const totalBuildings = await Building.count({
+      where: buildingWhere
+    });
+    
+    // 2. الحصول على معرفات المباني (مهم للفلترة اللاحقة)
     const buildings = await Building.findAll({
-      where: { companyId: req.user.companyId },
+      where: buildingWhere,
       attributes: ['id']
     });
     
     const buildingIds = buildings.map(building => building.id);
     
+    // لمعالجة الحالة التي لا توجد فيها مباني
     if (buildingIds.length === 0) {
-      // إذا لم يكن هناك مبانٍ للشركة، قم بإرجاع إحصائيات فارغة
       return res.status(200).json({
         status: 'success',
         data: {
@@ -46,211 +56,356 @@ const getGeneralStatistics = catchAsync(async (req, res, next) => {
       });
     }
     
-    whereBuildings = { id: buildingIds };
-    whereUnits = { buildingId: buildingIds };
+    // 3. إحصاء الوحدات العقارية
+    const totalUnits = await RealEstateUnit.count({
+      where: {
+        buildingId: { [Op.in]: buildingIds }
+      }
+    });
     
-    // الحصول على معرفات الوحدات العقارية
+    // 4. إحصاء الوحدات حسب الحالة
+    const unitsByStatus = await RealEstateUnit.findAll({
+      attributes: [
+        'status',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      where: {
+        buildingId: { [Op.in]: buildingIds }
+      },
+      group: ['status'],
+      raw: true
+    });
+    
+    // 5. الحصول على معرفات الوحدات (مهم للفلترة اللاحقة)
     const units = await RealEstateUnit.findAll({
-      where: whereUnits,
+      where: {
+        buildingId: { [Op.in]: buildingIds }
+      },
       attributes: ['id']
     });
     
     const unitIds = units.map(unit => unit.id);
     
-    // فلترة الحجوزات حسب الوحدات العقارية
-    whereReservations = unitIds.length > 0 ? { unitId: unitIds } : { id: 0 }; // تعطي نتيجة فارغة إذا لم تكن هناك وحدات
+    // لمعالجة الحالة التي لا توجد فيها وحدات عقارية
+    if (unitIds.length === 0) {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          totalBuildings,
+          totalUnits: 0,
+          unitsByStatus: [],
+          activeReservations: 0,
+          totalPayment: 0,
+          pendingServiceOrders: 0
+        }
+      });
+    }
     
-    // الحصول على معرفات الحجوزات
+    // 6. إحصاء الحجوزات النشطة
+    const activeReservations = await Reservation.count({
+      where: {
+        unitId: { [Op.in]: unitIds },
+        status: 'active'
+      }
+    });
+    
+    // 7. الحصول على معرفات الحجوزات (مهم للفلترة اللاحقة)
     const reservations = await Reservation.findAll({
-      where: whereReservations,
+      where: {
+        unitId: { [Op.in]: unitIds }
+      },
       attributes: ['id']
     });
     
     const reservationIds = reservations.map(reservation => reservation.id);
     
-    // فلترة المدفوعات وطلبات الخدمة حسب الحجوزات
-    wherePayments = reservationIds.length > 0 ? { reservationId: reservationIds } : { id: 0 };
-    whereServiceOrders = reservationIds.length > 0 ? { reservationId: reservationIds } : { id: 0 };
+    // 8. حساب إجمالي المدفوعات
+    let totalPayment = 0;
+    if (reservationIds.length > 0) {
+      const paymentResult = await PaymentHistory.findOne({
+        attributes: [
+          [sequelize.fn('SUM', sequelize.col('amount')), 'total']
+        ],
+        where: {
+          reservationId: { [Op.in]: reservationIds },
+          status: 'paid'
+        },
+        raw: true
+      });
+      
+      totalPayment = paymentResult ? Number(paymentResult.total) || 0 : 0;
+    }
+    
+    // 9. إحصاء طلبات الخدمة المعلقة
+    let pendingServiceOrders = 0;
+    if (reservationIds.length > 0) {
+      pendingServiceOrders = await ServiceOrder.count({
+        where: {
+          reservationId: { [Op.in]: reservationIds },
+          status: 'pending'
+        }
+      });
+    }
+    
+    // تحضير البيانات للرد
+    const unitStatusCounts = {
+      available: 0,
+      rented: 0,
+      maintenance: 0
+    };
+    
+    // تحويل نتائج الاستعلام إلى تنسيق أسهل للاستخدام
+    unitsByStatus.forEach(item => {
+      if (item.status in unitStatusCounts) {
+        unitStatusCounts[item.status] = parseInt(item.count, 10);
+      }
+    });
+    
+    const formattedUnitsByStatus = Object.keys(unitStatusCounts).map(status => ({
+      status,
+      count: unitStatusCounts[status]
+    }));
+    
+    // الاستجابة بالإحصائيات
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalBuildings,
+        totalUnits,
+        unitsByStatus: formattedUnitsByStatus,
+        activeReservations,
+        totalPayment,
+        pendingServiceOrders
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error in dashboard statistics:", error);
+    return next(new AppError('خطأ في استرجاع إحصائيات لوحة المعلومات', 500));
   }
-
-  // Count total buildings
-  const totalBuildings = await Building.count({
-    where: whereBuildings
-  });
-  
-  // Count total real estate units
-  const totalUnits = await RealEstateUnit.count({
-    where: whereUnits
-  });
-  
-  // Count units by status
-  const unitsByStatus = await RealEstateUnit.findAll({
-    attributes: [
-      'status',
-      [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-    ],
-    where: whereUnits,
-    group: ['status']
-  });
-  
-  // Count active reservations
-  const activeReservations = await Reservation.count({
-    where: { ...whereReservations, status: 'active' }
-  });
-  
-  // Get total payment amount
-  const totalPaymentResult = await PaymentHistory.findOne({
-    attributes: [
-      [sequelize.fn('SUM', sequelize.col('amount')), 'total']
-    ],
-    where: { ...wherePayments, status: 'paid' }
-  });
-  
-  const totalPayment = totalPaymentResult.getDataValue('total') || 0;
-  
-  // Count pending service orders
-  const pendingServiceOrders = await ServiceOrder.count({
-    where: { ...whereServiceOrders, status: 'pending' }
-  });
-  
-  // Response data
-  const statistics = {
-    totalBuildings,
-    totalUnits,
-    unitsByStatus: unitsByStatus.map(item => ({
-      status: item.status,
-      count: item.getDataValue('count')
-    })),
-    activeReservations,
-    totalPayment,
-    pendingServiceOrders
-  };
-  
-  res.status(200).json({
-    status: 'success',
-    data: statistics
-  });
 });
 
-// Get units status statistics
+// إحصائيات حالة الوحدات
 const getUnitsStatusStatistics = catchAsync(async (req, res, next) => {
-  let companyFilter = '';
-  let buildingFilter = '';
-  
-  // إذا كان المستخدم مديرًا، نطبق فلتر الشركة
-  if (req.user.role === 'manager') {
-    if (!req.user.companyId) {
-      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+  try {
+    // فلترة حسب دور المستخدم
+    const companyFilter = {};
+    
+    if (req.user.role === 'manager') {
+      if (!req.user.companyId) {
+        return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+      }
+      companyFilter.id = req.user.companyId;
     }
     
-    companyFilter = `WHERE c.id = ${req.user.companyId}`;
-    buildingFilter = `WHERE b.companyId = ${req.user.companyId}`;
+    // استعلام إحصائيات الوحدات حسب الشركة
+    const companies = await Company.findAll({
+      where: companyFilter,
+      include: [{
+        model: Building,
+        as: 'buildings',
+        include: [{
+          model: RealEstateUnit,
+          as: 'units'
+        }]
+      }],
+      attributes: ['id', 'name']
+    });
+    
+    // معالجة البيانات للحصول على إحصائيات لكل شركة
+    const unitsByCompany = companies.map(company => {
+      // تجميع كل الوحدات من جميع المباني التابعة للشركة
+      const allUnits = company.buildings.flatMap(building => building.units);
+      
+      // حساب عدد الوحدات لكل حالة
+      const availableUnits = allUnits.filter(unit => unit.status === 'available').length;
+      const rentedUnits = allUnits.filter(unit => unit.status === 'rented').length;
+      const maintenanceUnits = allUnits.filter(unit => unit.status === 'maintenance').length;
+      
+      return {
+        companyName: company.name,
+        totalUnits: allUnits.length,
+        availableUnits,
+        rentedUnits,
+        maintenanceUnits
+      };
+    });
+    
+    // استعلام إحصائيات الوحدات حسب المبنى
+    const buildingWhere = {};
+    if (req.user.role === 'manager') {
+      buildingWhere.companyId = req.user.companyId;
+    }
+    
+    const buildings = await Building.findAll({
+      where: buildingWhere,
+      include: [
+        {
+          model: Company,
+          as: 'company',
+          attributes: ['id', 'name']
+        },
+        {
+          model: RealEstateUnit,
+          as: 'units'
+        }
+      ],
+      attributes: ['id', 'name']
+    });
+    
+    // معالجة البيانات للحصول على إحصائيات لكل مبنى
+    const unitsByBuilding = buildings.map(building => {
+      const availableUnits = building.units.filter(unit => unit.status === 'available').length;
+      const rentedUnits = building.units.filter(unit => unit.status === 'rented').length;
+      const maintenanceUnits = building.units.filter(unit => unit.status === 'maintenance').length;
+      
+      return {
+        buildingName: building.name,
+        companyName: building.company ? building.company.name : 'غير معروف',
+        totalUnits: building.units.length,
+        availableUnits,
+        rentedUnits,
+        maintenanceUnits
+      };
+    });
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        unitsByCompany,
+        unitsByBuilding
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error in units status statistics:", error);
+    return next(new AppError('خطأ في استرجاع إحصائيات حالة الوحدات', 500));
   }
-  
-  // Get units by company
-  const unitsByCompany = await sequelize.query(`
-    SELECT 
-      c.name as companyName,
-      COUNT(r.id) as totalUnits,
-      SUM(CASE WHEN r.status = 'available' THEN 1 ELSE 0 END) as availableUnits,
-      SUM(CASE WHEN r.status = 'rented' THEN 1 ELSE 0 END) as rentedUnits,
-      SUM(CASE WHEN r.status = 'maintenance' THEN 1 ELSE 0 END) as maintenanceUnits
-    FROM Companies c
-    LEFT JOIN Buildings b ON c.id = b.companyId
-    LEFT JOIN RealEstateUnits r ON b.id = r.buildingId
-    ${companyFilter}
-    GROUP BY c.id
-  `, { type: QueryTypes.SELECT });
-  
-  // Get units by building
-  const unitsByBuilding = await sequelize.query(`
-    SELECT 
-      b.name as buildingName,
-      c.name as companyName,
-      COUNT(r.id) as totalUnits,
-      SUM(CASE WHEN r.status = 'available' THEN 1 ELSE 0 END) as availableUnits,
-      SUM(CASE WHEN r.status = 'rented' THEN 1 ELSE 0 END) as rentedUnits,
-      SUM(CASE WHEN r.status = 'maintenance' THEN 1 ELSE 0 END) as maintenanceUnits
-    FROM Buildings b
-    LEFT JOIN Companies c ON b.companyId = c.id
-    LEFT JOIN RealEstateUnits r ON b.id = r.buildingId
-    ${buildingFilter}
-    GROUP BY b.id
-  `, { type: QueryTypes.SELECT });
-  
-  // Response data
-  const statistics = {
-    unitsByCompany,
-    unitsByBuilding
-  };
-  
-  res.status(200).json({
-    status: 'success',
-    data: statistics
-  });
 });
 
-// Get service orders status statistics
+// إحصائيات طلبات الخدمة
 const getServiceOrdersStatusStatistics = catchAsync(async (req, res, next) => {
-  let serviceOrderFilter = '';
-  
-  // إذا كان المستخدم مديرًا، نطبق فلتر الشركة
-  if (req.user.role === 'manager') {
-    if (!req.user.companyId) {
-      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+  try {
+    // فلترة حسب دور المستخدم
+    let whereCondition = {};
+    let includeConditions = [];
+    
+    if (req.user.role === 'manager') {
+      if (!req.user.companyId) {
+        return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+      }
+      
+      // للمدير، نحتاج إلى فلترة طلبات الخدمة المرتبطة بشركته فقط
+      includeConditions = [
+        {
+          model: Reservation,
+          as: 'reservation',
+          include: [{
+            model: RealEstateUnit,
+            as: 'unit',
+            include: [{
+              model: Building,
+              as: 'building',
+              where: { companyId: req.user.companyId }
+            }]
+          }]
+        }
+      ];
     }
     
-    // نحتاج إلى فلترة طلبات الخدمة حسب الحجوزات المرتبطة بوحدات المباني التابعة للشركة
-    serviceOrderFilter = `
-      WHERE so.reservationId IN (
-        SELECT r.id FROM Reservations r
-        JOIN RealEstateUnits u ON r.unitId = u.id
-        JOIN Buildings b ON u.buildingId = b.id
-        WHERE b.companyId = ${req.user.companyId}
-      )
-    `;
+    // الحصول على جميع طلبات الخدمة مع الفلترة المناسبة
+    const serviceOrders = await ServiceOrder.findAll({
+      where: whereCondition,
+      include: includeConditions
+    });
+    
+    // تنظيم البيانات حسب نوع الخدمة
+    const serviceTypeCounts = {};
+    const serviceMonthCounts = {};
+    
+    serviceOrders.forEach(order => {
+      // إحصائيات حسب نوع الخدمة
+      if (!serviceTypeCounts[order.serviceType]) {
+        serviceTypeCounts[order.serviceType] = {
+          serviceType: order.serviceType,
+          total: 0,
+          pending: 0,
+          inProgress: 0,
+          completed: 0,
+          rejected: 0
+        };
+      }
+      
+      serviceTypeCounts[order.serviceType].total++;
+      
+      switch (order.status) {
+        case 'pending':
+          serviceTypeCounts[order.serviceType].pending++;
+          break;
+        case 'in-progress':
+          serviceTypeCounts[order.serviceType].inProgress++;
+          break;
+        case 'completed':
+          serviceTypeCounts[order.serviceType].completed++;
+          break;
+        case 'rejected':
+          serviceTypeCounts[order.serviceType].rejected++;
+          break;
+      }
+      
+      // إحصائيات حسب الشهر
+      const createdAt = new Date(order.createdAt);
+      const monthKey = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (!serviceMonthCounts[monthKey]) {
+        serviceMonthCounts[monthKey] = {
+          month: monthKey,
+          total: 0,
+          pending: 0,
+          inProgress: 0,
+          completed: 0,
+          rejected: 0
+        };
+      }
+      
+      serviceMonthCounts[monthKey].total++;
+      
+      switch (order.status) {
+        case 'pending':
+          serviceMonthCounts[monthKey].pending++;
+          break;
+        case 'in-progress':
+          serviceMonthCounts[monthKey].inProgress++;
+          break;
+        case 'completed':
+          serviceMonthCounts[monthKey].completed++;
+          break;
+        case 'rejected':
+          serviceMonthCounts[monthKey].rejected++;
+          break;
+      }
+    });
+    
+    // تحويل النتائج إلى مصفوفات
+    const serviceOrdersByType = Object.values(serviceTypeCounts);
+    
+    // ترتيب النتائج حسب الشهر (تنازلياً)
+    const serviceOrdersByMonth = Object.values(serviceMonthCounts)
+      .sort((a, b) => b.month.localeCompare(a.month))
+      .slice(0, 12); // الاحتفاظ بآخر 12 شهر فقط
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        serviceOrdersByType,
+        serviceOrdersByMonth
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error in service orders statistics:", error);
+    return next(new AppError('خطأ في استرجاع إحصائيات طلبات الخدمة', 500));
   }
-  
-  // Get service orders by type
-  const serviceOrdersByType = await sequelize.query(`
-    SELECT 
-      so.serviceType,
-      COUNT(*) as total,
-      SUM(CASE WHEN so.status = 'pending' THEN 1 ELSE 0 END) as pending,
-      SUM(CASE WHEN so.status = 'in-progress' THEN 1 ELSE 0 END) as inProgress,
-      SUM(CASE WHEN so.status = 'completed' THEN 1 ELSE 0 END) as completed,
-      SUM(CASE WHEN so.status = 'rejected' THEN 1 ELSE 0 END) as rejected
-    FROM ServiceOrders so
-    ${serviceOrderFilter}
-    GROUP BY so.serviceType
-  `, { type: QueryTypes.SELECT });
-  
-  // Get service orders by month
-  const serviceOrdersByMonth = await sequelize.query(`
-    SELECT 
-      DATE_FORMAT(so.createdAt, '%Y-%m') as month,
-      COUNT(*) as total,
-      SUM(CASE WHEN so.status = 'pending' THEN 1 ELSE 0 END) as pending,
-      SUM(CASE WHEN so.status = 'in-progress' THEN 1 ELSE 0 END) as inProgress,
-      SUM(CASE WHEN so.status = 'completed' THEN 1 ELSE 0 END) as completed,
-      SUM(CASE WHEN so.status = 'rejected' THEN 1 ELSE 0 END) as rejected
-    FROM ServiceOrders so
-    ${serviceOrderFilter}
-    GROUP BY DATE_FORMAT(so.createdAt, '%Y-%m')
-    ORDER BY month DESC
-    LIMIT 12
-  `, { type: QueryTypes.SELECT });
-  
-  // Response data
-  const statistics = {
-    serviceOrdersByType,
-    serviceOrdersByMonth
-  };
-  
-  res.status(200).json({
-    status: 'success',
-    data: statistics
-  });
 });
 
 module.exports = {

@@ -42,7 +42,8 @@ const Reservation = sequelize.define('Reservation', {
   contractImageUrl: {
     type: DataTypes.VIRTUAL,
     get() {
-      return this.contractImage ? getFileUrl(this.contractImage, 'contracts') : null;
+      if (!this.contractImage) return null;
+      return `${process.env.BASE_URL || 'http://localhost:3000'}/uploads/contracts/${this.contractImage}`;
     }
   },
   status: {

@@ -196,7 +196,9 @@ const createReservation = catchAsync(async (req, res, next) => {
     
     if (req.files) {
       if (req.files.identityImage) {
+
         identityImage = req.files.identityImage[0].filename;
+        console.log(identityImage);
       }
       if (req.files.commercialRegisterImage) {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;

@@ -20,15 +20,10 @@ router.get('/', isAdminOrManager, reservationController.getAllReservations);
 router.get('/:id', reservationController.getReservationById);
 
 
-// Create reservation (with multiple file uploads)
 router.post(
   '/',
   isAdminOrManager,
-  multer().fields([
-    { name: 'contractImage', maxCount: 1 },
-    { name: 'identityImage', maxCount: 1 },
-    { name: 'commercialRegisterImage', maxCount: 1 }
-  ]),
+  uploadMiddleware.uploadReservationFiles, // Use the new middleware here
   reservationValidationRules,
   validate,
   reservationController.createReservation

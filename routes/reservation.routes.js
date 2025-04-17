@@ -23,7 +23,9 @@ router.get('/:id', reservationController.getReservationById);
 router.post(
   '/',
   isAdminOrManager,
-  uploadMiddleware.uploadReservationFiles, // Use the new middleware here
+  uploadMiddleware.identityImage,
+  uploadMiddleware.commercialRegisterImage,
+  uploadMiddleware.contractImage,// Use the new middleware here
   reservationValidationRules,
   validate,
   reservationController.createReservation

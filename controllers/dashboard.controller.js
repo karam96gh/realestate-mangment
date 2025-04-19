@@ -284,39 +284,80 @@ const getUnitsStatusStatistics = catchAsync(async (req, res, next) => {
 });
 
 // إحصائيات طلبات الخدمة
+// إصلاح دالة getServiceOrdersStatusStatistics في controllers/dashboard.controller.js
+
 const getServiceOrdersStatusStatistics = catchAsync(async (req, res, next) => {
   try {
     // فلترة حسب دور المستخدم
     let whereCondition = {};
-    let includeConditions = [];
     
     if (req.user.role === 'manager') {
       if (!req.user.companyId) {
         return next(new AppError('المدير غير مرتبط بأي شركة', 403));
       }
       
-      // للمدير، نحتاج إلى فلترة طلبات الخدمة المرتبطة بشركته فقط
-      includeConditions = [
-        {
-          model: Reservation,
-          as: 'reservation',
-          include: [{
-            model: RealEstateUnit,
-            as: 'unit',
-            include: [{
-              model: Building,
-              as: 'building',
-              where: { companyId: req.user.companyId }
-            }]
-          }]
-        }
-      ];
+      // نستخدم نفس النهج المتسلسل للحصول على طلبات الخدمة المرتبطة بالشركة فقط
+      
+      // 1. الحصول على معرفات المباني التابعة للشركة
+      const companyBuildings = await Building.findAll({
+        where: { companyId: req.user.companyId },
+        attributes: ['id']
+      });
+      
+      const buildingIds = companyBuildings.map(building => building.id);
+      
+      if (buildingIds.length === 0) {
+        // إذا لم تكن هناك مباني، ارجع بيانات فارغة
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            serviceOrdersByType: [],
+            serviceOrdersByMonth: []
+          }
+        });
+      }
+      
+      // 2. الحصول على معرفات الوحدات في هذه المباني
+      const unitIds = await RealEstateUnit.findAll({
+        where: { buildingId: { [Op.in]: buildingIds } },
+        attributes: ['id']
+      }).then(units => units.map(unit => unit.id));
+      
+      if (unitIds.length === 0) {
+        // إذا لم تكن هناك وحدات، ارجع بيانات فارغة
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            serviceOrdersByType: [],
+            serviceOrdersByMonth: []
+          }
+        });
+      }
+      
+      // 3. الحصول على معرفات الحجوزات لهذه الوحدات
+      const reservationIds = await Reservation.findAll({
+        where: { unitId: { [Op.in]: unitIds } },
+        attributes: ['id']
+      }).then(reservations => reservations.map(reservation => reservation.id));
+      
+      if (reservationIds.length === 0) {
+        // إذا لم تكن هناك حجوزات، ارجع بيانات فارغة
+        return res.status(200).json({
+          status: 'success',
+          data: {
+            serviceOrdersByType: [],
+            serviceOrdersByMonth: []
+          }
+        });
+      }
+      
+      // 4. تحديد شرط البحث لطلبات الخدمة
+      whereCondition.reservationId = { [Op.in]: reservationIds };
     }
     
     // الحصول على جميع طلبات الخدمة مع الفلترة المناسبة
     const serviceOrders = await ServiceOrder.findAll({
-      where: whereCondition,
-      include: includeConditions
+      where: whereCondition
     });
     
     // تنظيم البيانات حسب نوع الخدمة

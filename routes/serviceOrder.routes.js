@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const serviceOrderController = require('../controllers/serviceOrder.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdminOrManager,isTenantOrManagerWithAccess } = require('../middleware/role.middleware');
 const { validate, serviceOrderValidationRules } = require('../middleware/validation.middleware');
 const uploadMiddleware = require('../middleware/upload.middleware');
 
@@ -31,7 +31,6 @@ router.put(
 router.delete('/:id', serviceOrderController.deleteServiceOrder);
 
 // Get service orders by reservation ID
-const { isAdminOrManager, isTenantOrManagerWithAccess } = require('../middleware/role.middleware');
 
 // استخدام الدالة في مسار الحصول على طلبات الخدمة لحجز معين
 router.get('/reservation/:reservationId', isTenantOrManagerWithAccess, serviceOrderController.getServiceOrdersByReservationId);

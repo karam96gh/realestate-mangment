@@ -1,5 +1,8 @@
 // Role middleware 
 // Role middleware function
+const Reservation = require('../models/reservation.model');
+const RealEstateUnit = require('../models/realEstateUnit.model');
+const Building = require('../models/building.model');
 const checkRole = (roles) => {
     return (req, res, next) => {
       // Ensure user exists on request (from auth middleware)
@@ -18,6 +21,40 @@ const checkRole = (roles) => {
       next();
     };
   };
+  const isTenantOrManagerWithAccess = async (req, res, next) => {
+    try {
+      const reservationId = req.params.reservationId;
+      const reservation = await Reservation.findByPk(reservationId);
+      
+      if (!reservation) {
+        return res.status(404).json({ message: 'الحجز غير موجود' });
+      }
+      
+      // إذا كان المستخدم مستأجر، تحقق أنه مالك الحجز
+      if (req.user.role === 'tenant' && reservation.userId !== req.user.id) {
+        return res.status(403).json({ message: 'غير مصرح لك بالوصول لهذا الحجز' });
+      }
+      
+      // إذا كان المستخدم مديرًا، تحقق من أن الحجز ينتمي إلى شركته
+      if (req.user.role === 'manager') {
+        const unit = await RealEstateUnit.findByPk(reservation.unitId, {
+          include: [{
+            model: Building,
+            as: 'building'
+          }]
+        });
+        
+        if (!unit || unit.building.companyId !== req.user.companyId) {
+          return res.status(403).json({ message: 'غير مصرح بالوصول لهذا الحجز' });
+        }
+      }
+      
+      next();
+    } catch (error) {
+      return res.status(500).json({ message: 'خطأ في التحقق من الصلاحيات' });
+    }
+  };
+  
   // التحقق من ملكية المستأجر للحجز
 const isTenantOwner = async (req, res, next) => {
   try {
@@ -61,6 +98,7 @@ module.exports = {
   isTenant: checkRole(['tenant']),
   isAdminOrManager: checkRole(['admin', 'manager']),
   isTenantOwner,
-  checkRole // تصدير الوظيفة العامة للتحقق المخصص من الأدوار
+  checkRole ,// تصدير الوظيفة العامة للتحقق المخصص من الأدوار
+  isTenantOrManagerWithAccess 
 };
   

@@ -61,7 +61,23 @@ const getBuildingById = catchAsync(async (req, res, next) => {
     });
     
     if (!hasReservation) {
-      return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
+      // بحث موسع عن كل الوحدات التي يستأجرها المستخدم
+      const userReservations = await Reservation.findAll({
+        where: { userId: req.user.id },
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          attributes: ['buildingId']
+        }]
+      });
+      
+      const userBuildingIds = userReservations
+        .filter(res => res.unit) // تأكد من وجود الوحدة
+        .map(res => res.unit.buildingId);
+        
+      if (!userBuildingIds.includes(building.id)) {
+        return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
+      }
     }
   }
   

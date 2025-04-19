@@ -105,7 +105,17 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
   const { reservationId, serviceType, serviceSubtype, description } = req.body;
   
   // Verify reservation exists
-  const reservation = await Reservation.findByPk(reservationId);
+  const reservation = await Reservation.findByPk(reservationId, {
+    include: [{
+      model: RealEstateUnit,
+      as: 'unit',
+      include: [{
+        model: Building,
+        as: 'building'
+      }]
+    }]
+  });
+  
   if (!reservation) {
     return next(new AppError('Reservation not found', 404));
   }
@@ -123,7 +133,7 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
   
   // Create service order
   const newServiceOrder = await ServiceOrder.create({
-    userId: req.user.role === 'tenant' ? req.user.id : reservation.userId,
+    userId: req.user.id, // Always use the current user's ID
     reservationId,
     serviceType,
     serviceSubtype,

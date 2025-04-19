@@ -12,41 +12,49 @@ const { Op } = require('sequelize');
 
 
 const getMyReservations = catchAsync(async (req, res) => {
-    // Get reservations for the authenticated user
-    console.log('User ID:', req.user.id);
-    
-    // First check if the user exists
-    const user = await User.findByPk(req.user.id);
-    if (!user) {
-      console.log('User not found in database');
-      return res.status(404).json({
-        status: 'fail',
-        message: 'User not found'
-      });
-    }
-    
-    // Count reservations for this user
-    const reservationCount = await Reservation.count({
-      where: { userId: req.user.id }
+  // Get reservations for the authenticated user
+  console.log('User ID:', req.user.id);
+  
+  // First check if the user exists
+  const user = await User.findByPk(req.user.id);
+  if (!user) {
+    console.log('User not found in database');
+    return res.status(404).json({
+      status: 'fail',
+      message: 'User not found'
     });
-    console.log('Reservation count for this user:', reservationCount);
-    
-    // Get the reservations
-    const reservations = await Reservation.findAll({
-      where: { userId: req.user.id },
-    //   include: [
-    //     { model: RealEstateUnit, as: 'unit' }
-    //   ],
-      order: [['createdAt', 'DESC']]
-    });
-    
-    // Return empty array if no reservations found
-    res.status(200).json({
-      status: 'success',
-      results: reservations.length,
-      data: reservations
-    });
+  }
+  
+  // Count reservations for this user
+  const reservationCount = await Reservation.count({
+    where: { userId: req.user.id }
   });
+  console.log('Reservation count for this user:', reservationCount);
+  
+  // Get the reservations with unit and building information
+  const reservations = await Reservation.findAll({
+    where: { userId: req.user.id },
+    include: [
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        include: [{
+          model: Building,
+          as: 'building',
+          include: [{ model: Company, as: 'company' }]
+        }]
+      }
+    ],
+    order: [['createdAt', 'DESC']]
+  });
+  
+  // Return array of reservations with detailed information
+  res.status(200).json({
+    status: 'success',
+    results: reservations.length,
+    data: reservations
+  });
+});
 // Get all reservations
 const getAllReservations = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الحجوزات

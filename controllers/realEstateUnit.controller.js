@@ -148,7 +148,16 @@ const getUnitById = catchAsync(async (req, res, next) => {
     });
     
     if (!hasReservation) {
-      return next(new AppError('غير مصرح لك بعرض هذه الوحدة', 403));
+      // هنا نقوم بفحص إضافي للتحقق من رقم الوحدة في جميع حجوزات المستأجر
+      const userReservations = await Reservation.findAll({
+        where: { userId: req.user.id },
+        attributes: ['unitId']
+      });
+      
+      const userUnitIds = userReservations.map(res => res.unitId);
+      if (!userUnitIds.includes(unit.id)) {
+        return next(new AppError('غير مصرح لك بعرض هذه الوحدة', 403));
+      }
     }
   }
   
@@ -157,7 +166,6 @@ const getUnitById = catchAsync(async (req, res, next) => {
     data: unit
   });
 });
-
 // Get unit by ID
 
 

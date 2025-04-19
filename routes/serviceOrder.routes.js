@@ -17,13 +17,7 @@ router.get('/', isAdminOrManager, serviceOrderController.getAllServiceOrders);
 router.get('/:id', serviceOrderController.getServiceOrderById);
 
 // Create service order (with attachment upload)
-router.post(
-  '/',
-  uploadMiddleware.attachmentFile,
-  serviceOrderValidationRules,
-  validate,
-  serviceOrderController.createServiceOrder
-);
+
 
 // Update service order (with attachment upload)
 router.put(
@@ -37,6 +31,17 @@ router.put(
 router.delete('/:id', serviceOrderController.deleteServiceOrder);
 
 // Get service orders by reservation ID
-router.get('/reservation/:reservationId', serviceOrderController.getServiceOrdersByReservationId);
+const { isAdminOrManager, isTenantOrManagerWithAccess } = require('../middleware/role.middleware');
 
+// استخدام الدالة في مسار الحصول على طلبات الخدمة لحجز معين
+router.get('/reservation/:reservationId', isTenantOrManagerWithAccess, serviceOrderController.getServiceOrdersByReservationId);
+
+// وأيضًا يمكن استخدامها في مسار إنشاء طلب خدمة جديد
+router.post(
+  '/',
+  uploadMiddleware.attachmentFile,
+  serviceOrderValidationRules,
+  validate,
+  serviceOrderController.createServiceOrder
+);
 module.exports = router;

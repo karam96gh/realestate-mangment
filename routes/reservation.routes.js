@@ -89,7 +89,7 @@ router.put(
 router.delete('/:id', isAdminOrManager, reservationController.deleteReservation);
 
 // Get reservations by unit ID
-router.get('/unit/:unitId', isAdminOrManager, reservationController.getReservationsByUnitId);
+router.get('/unit/:unitId', reservationController.getReservationsByUnitId);
 
 // Get reservations by user ID
 router.get('/user/:userId', reservationController.getReservationsByUserId);

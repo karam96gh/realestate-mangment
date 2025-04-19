@@ -18,34 +18,83 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
   }
   
   let whereCondition = {};
-  let includeOptions = [
-    { model: User, as: 'user', attributes: { exclude: ['password'] } },
-    { 
-      model: Reservation, 
-      as: 'reservation',
-      include: [{
-        model: RealEstateUnit,
-        as: 'unit',
-        include: [{
-          model: Building,
-          as: 'building'
-        }]
-      }]
-    }
-  ];
   
-  // إذا كان المستخدم مديرًا، فقط إظهار طلبات خدمة شركته
+  // نهج مختلف للتصفية: سنحصل أولاً على قائمة معرفات الحجوزات المسموح بها
   if (req.user.role === 'manager') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
     
-    includeOptions[1].include[0].include[0].where = { companyId: req.user.companyId };
+    // الحصول على معرفات المباني التابعة للشركة
+    const companyBuildings = await Building.findAll({
+      where: { companyId: req.user.companyId },
+      attributes: ['id']
+    });
+    
+    const buildingIds = companyBuildings.map(building => building.id);
+    
+    if (buildingIds.length === 0) {
+      // إذا لم تكن هناك مباني، ارجع قائمة فارغة
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        data: []
+      });
+    }
+    
+    // الحصول على معرفات الوحدات في هذه المباني
+    const unitIds = await RealEstateUnit.findAll({
+      where: { buildingId: { [Op.in]: buildingIds } },
+      attributes: ['id']
+    }).then(units => units.map(unit => unit.id));
+    
+    if (unitIds.length === 0) {
+      // إذا لم تكن هناك وحدات، ارجع قائمة فارغة
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        data: []
+      });
+    }
+    
+    // الحصول على معرفات الحجوزات لهذه الوحدات
+    const reservationIds = await Reservation.findAll({
+      where: { unitId: { [Op.in]: unitIds } },
+      attributes: ['id']
+    }).then(reservations => reservations.map(reservation => reservation.id));
+    
+    if (reservationIds.length === 0) {
+      // إذا لم تكن هناك حجوزات، ارجع قائمة فارغة
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        data: []
+      });
+    }
+    
+    // تحديد حالة البحث لطلبات الخدمة
+    whereCondition.reservationId = { [Op.in]: reservationIds };
   }
   
+  // الاستعلام عن طلبات الخدمة مع تضمين جميع المعلومات المطلوبة
   const serviceOrders = await ServiceOrder.findAll({
     where: whereCondition,
-    include: includeOptions
+    include: [
+      { model: User, as: 'user', attributes: { exclude: ['password'] } },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          include: [{
+            model: Building,
+            as: 'building',
+            include: [{ model: Company, as: 'company' }]
+          }]
+        }]
+      }
+    ]
   });
   
   res.status(200).json({

@@ -7,6 +7,8 @@ const RealEstateUnit = require('../models/realEstateUnit.model');
 const Reservation = require('../models/reservation.model');
 const ServiceOrder = require('../models/serviceOrder.model');
 const PaymentHistory = require('../models/paymentHistory.model');
+const tenant = require('../models/tenant.model');
+
 const bcrypt = require('bcryptjs');
 
 // Initialize database and create tables

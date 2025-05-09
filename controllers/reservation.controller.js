@@ -1,21 +1,23 @@
+// controllers/reservation.controller.js
+
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
+const Tenant = require('../models/tenant.model');
 const RealEstateUnit = require('../models/realEstateUnit.model');
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
-const generatePassword = require('../utils/generatePassword');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
 
-
+// الحصول على حجوزاتي
 const getMyReservations = catchAsync(async (req, res) => {
-  // Get reservations for the authenticated user
+  // الحصول على حجوزات المستخدم المصادق عليه
   console.log('User ID:', req.user.id);
   
-  // First check if the user exists
+  // التحقق أولاً من وجود المستخدم
   const user = await User.findByPk(req.user.id);
   if (!user) {
     console.log('User not found in database');
@@ -25,13 +27,13 @@ const getMyReservations = catchAsync(async (req, res) => {
     });
   }
   
-  // Count reservations for this user
+  // حساب عدد الحجوزات لهذا المستخدم
   const reservationCount = await Reservation.count({
     where: { userId: req.user.id }
   });
   console.log('Reservation count for this user:', reservationCount);
   
-  // Get the reservations with unit and building information
+  // الحصول على الحجوزات مع معلومات الوحدة والمبنى
   const reservations = await Reservation.findAll({
     where: { userId: req.user.id },
     include: [
@@ -48,14 +50,15 @@ const getMyReservations = catchAsync(async (req, res) => {
     order: [['createdAt', 'DESC']]
   });
   
-  // Return array of reservations with detailed information
+  // إرجاع مصفوفة الحجوزات مع المعلومات التفصيلية
   res.status(200).json({
     status: 'success',
     results: reservations.length,
     data: reservations
   });
 });
-// Get all reservations
+
+// الحصول على جميع الحجوزات
 const getAllReservations = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الحجوزات
   if(req.user.role === 'tenant') {
@@ -76,14 +79,13 @@ const getAllReservations = catchAsync(async (req, res, next) => {
     }
   ];
   
-  // إذا كان المستخدم مديرًا، فقط إظهار حجوزات شركته
+  // إذا كان المستخدم مديرًا، يُظهر فقط حجوزات شركته
   if (req.user.role === 'manager') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
     
-    // نحتاج للتأكد من أن الاستعلام يتم بشكل صحيح
-    // نحتاج لاستعلام متداخل للحصول على الحجوزات المرتبطة بشركة المدير
+    // نحتاج إلى استعلامات متداخلة للحصول على الحجوزات المرتبطة بشركة المدير
     const companyBuildings = await Building.findAll({
       where: { companyId: req.user.companyId },
       attributes: ['id']
@@ -113,6 +115,7 @@ const getAllReservations = catchAsync(async (req, res, next) => {
   });
 });
 
+// الحصول على حجز حسب المعرف
 const getReservationById = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id, {
     include: [
@@ -133,12 +136,12 @@ const getReservationById = catchAsync(async (req, res, next) => {
     return next(new AppError('لم يتم العثور على الحجز', 404));
   }
   
-  // تحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية حجوزاته الخاصة
+  // التحقق إذا كان المستخدم مستأجرًا، فيمكنه فقط رؤية حجوزاته الخاصة
   if (req.user.role === 'tenant' && reservation.userId !== req.user.id) {
     return next(new AppError('غير مصرح لك بعرض هذا الحجز', 403));
   }
   
-  // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية حجوزات شركته
+  // التحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية حجوزات شركته
   if (req.user.role === 'manager') {
     if (!req.user.companyId || req.user.companyId !== reservation.unit.building.companyId) {
       return next(new AppError('غير مصرح لك بعرض هذا الحجز', 403));
@@ -151,170 +154,195 @@ const getReservationById = catchAsync(async (req, res, next) => {
   });
 });
 
-// Get reservation by ID
-
-
-// controllers/reservation.controller.js - فقط الجزء الذي يحتاج تعديل
-
-// تعديل دالة createReservation لضمان إرجاع روابط الملفات
-// controllers/reservation.controller.js - updated createReservation function
-
-// controllers/reservation.controller.js - Fix for "identityImage is not defined"
-
+// إنشاء حجز جديد
 const createReservation = catchAsync(async (req, res, next) => {
-  console.log("Files received:", req.files); // Debug log
-  console.log("Form data:", req.body);       // Debug log
+  console.log("Files received:", req.files); // سجل تصحيح
+  console.log("Form data:", req.body);       // سجل تصحيح
   
   const {
     userId,
     unitId,
+    contractType,
     startDate,
     endDate,
-    notes,
-    fullName,
-    email,
-    phone
+    paymentMethod,
+    paymentSchedule,
+    includesDeposit,
+    depositAmount,
+    notes
   } = req.body;
-  const password = generatePassword(10);
-
-  // Check if unit exists and is available
+  
+  // التحقق من وجود الوحدة وما إذا كانت متاحة
   const unit = await RealEstateUnit.findByPk(unitId);
   if (!unit) {
-    return next(new AppError('Unit not found', 404));
+    return next(new AppError('الوحدة غير موجودة', 404));
   }
   
   if (unit.status !== 'available') {
-    return next(new AppError('Unit is not available for reservation', 400));
+    return next(new AppError('الوحدة غير متاحة للحجز', 400));
   }
   
-  let userToAssign;
-  // Define these variables outside the if block scope to access them later
-  let identityImage = null;
-  let commercialRegisterImage = null;
+  // التحقق من وجود المستأجر
+  if (!userId) {
+    return next(new AppError('معرف المستأجر مطلوب', 400));
+  }
+  
+  const user = await User.findByPk(userId);
+  if (!user) {
+    return next(new AppError('المستأجر غير موجود', 404));
+  }
+  
+  // التحقق من أن المستخدم هو مستأجر
+  if (user.role !== 'tenant') {
+    return next(new AppError('المستخدم المحدد ليس مستأجرًا', 400));
+  }
+  
+  // التحقق من وجود معلومات المستأجر
+  let tenant = await Tenant.findOne({ where: { userId } });
+  if (!tenant) {
+    return next(new AppError('معلومات المستأجر غير مكتملة. الرجاء تسجيل المستأجر أولاً', 400));
+  }
+  
+  // معالجة الملفات المرفقة
   let contractImage = null;
+  let contractPdf = null;
     
-  // Process file uploads first
   if (req.files) {
-    if (req.files.identityImage && req.files.identityImage.length > 0) {
-      identityImage = req.files.identityImage[0].filename;
-      console.log("Identity image saved:", identityImage);
-    }
-    
-    if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
-      commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
-      console.log("Commercial register saved:", commercialRegisterImage);
-    }
-    
     if (req.files.contractImage && req.files.contractImage.length > 0) {
       contractImage = req.files.contractImage[0].filename;
       console.log("Contract image saved:", contractImage);
     }
+    
+    if (req.files.contractPdf && req.files.contractPdf.length > 0) {
+      contractPdf = req.files.contractPdf[0].filename;
+      console.log("Contract PDF saved:", contractPdf);
+    }
   }
-    
-  // If userId is provided, use existing user
-  if (userId) {
-    userToAssign = await User.findByPk(userId);
-    if (!userToAssign) {
-      return next(new AppError('User not found', 404));
-    }
-  } else {
-    // Create new tenant user if not exists
-    if (!fullName) {
-      return next(new AppError('Full name is required for new tenant', 400));
-    }
-    
-    // Generate username and password
-    const username = `tenant${Date.now()}`;
-    
-    // Create new user with the already processed images
-    userToAssign = await User.create({
-      username,
-      password,
-      fullName,
-      email,
-      phone,
-      role: 'tenant',
-      identityImage,
-      commercialRegisterImage
+  
+  try {
+    // إنشاء الحجز
+    const newReservation = await Reservation.create({
+      userId,
+      unitId,
+      contractType: contractType || 'residential',
+      startDate,
+      endDate,
+      contractImage,
+      contractPdf,
+      paymentMethod: paymentMethod || 'cash',
+      paymentSchedule: paymentSchedule || 'monthly',
+      includesDeposit: includesDeposit === 'true' || includesDeposit === true,
+      depositAmount: depositAmount || null,
+      status: 'active',
+      notes
     });
-  }
-  
-  // Create reservation with the already processed contract image
-  const newReservation = await Reservation.create({
-    userId: userToAssign.id,
-    unitId,
-    startDate,
-    endDate,
-    contractImage,
-    status: 'active',
-    notes
-  });
-  
-  // Update unit status to rented
-  await unit.update({ status: 'rented' });
-  
-  // Generate URLs for the files
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-  
-  // Return reservation with user credentials if a new user was created
-  const responseData = {
-    reservation: {
-      ...newReservation.get({ plain: true }),
-      contractImageUrl: contractImage ? `${BASE_URL}/uploads/contracts/${contractImage}` : null
-    },
-    unit: unit
-  };
-  
-  // If new user was created, include credentials
-  if (!userId) {
-    responseData.newUser = {
-      id: userToAssign.id,
-      username: userToAssign.username,
-      password: password, // Only sent once when created
-      fullName: userToAssign.fullName,
-      identityImageUrl: identityImage ? `${BASE_URL}/uploads/identities/${identityImage}` : null,
-      commercialRegisterImageUrl: commercialRegisterImage ? `${BASE_URL}/uploads/identities/${commercialRegisterImage}` : null
+    
+    // تحديث حالة الوحدة إلى مؤجرة
+    await unit.update({ status: 'rented' });
+    
+    // إنشاء عناوين URL للملفات
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+    
+    // إرجاع بيانات الحجز
+    const responseData = {
+      reservation: {
+        ...newReservation.get({ plain: true }),
+        contractImageUrl: contractImage ? `${BASE_URL}/uploads/contracts/${contractImage}` : null,
+        contractPdfUrl: contractPdf ? `${BASE_URL}/uploads/contracts/${contractPdf}` : null
+      },
+      unit: unit,
+      tenant: tenant
     };
+    
+    res.status(201).json({
+      status: 'success',
+      data: responseData
+    });
+  } catch (error) {
+    // حذف الملفات المرفقة في حالة فشل الإنشاء
+    if (contractImage) {
+      const filePath = path.join(UPLOAD_PATHS.contracts, contractImage);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    
+    if (contractPdf) {
+      const filePath = path.join(UPLOAD_PATHS.contracts, contractPdf);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    
+    // رمي الخطأ لمعالجته في وحدة التحكم بالأخطاء المركزية
+    throw error;
   }
-  
-  res.status(201).json({
-    status: 'success',
-    data: responseData
-  });
 });
-// Update reservation
+
+// تحديث حجز
 const updateReservation = catchAsync(async (req, res, next) => {
-  const { startDate, endDate, status, notes } = req.body;
+  const { 
+    contractType,
+    startDate, 
+    endDate, 
+    status, 
+    paymentMethod,
+    paymentSchedule,
+    includesDeposit,
+    depositAmount,
+    notes
+  } = req.body;
   
-  // Check if reservation exists
+  // التحقق من وجود الحجز
   const reservation = await Reservation.findByPk(req.params.id);
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('الحجز غير موجود', 404));
   }
   
-  // Handle contract image upload if provided
+  // معالجة الملفات المرفقة
   let contractImage = reservation.contractImage;
-  if (req.file) {
-    // Delete old contract image if it exists
-    if (reservation.contractImage) {
-      const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
-      if (fs.existsSync(oldContractPath)) {
-        fs.unlinkSync(oldContractPath);
+  let contractPdf = reservation.contractPdf;
+  
+  if (req.files) {
+    // معالجة صورة العقد إذا تم توفيرها
+    if (req.files.contractImage && req.files.contractImage.length > 0) {
+      // حذف صورة العقد القديمة إذا وجدت
+      if (reservation.contractImage) {
+        const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
+        if (fs.existsSync(oldContractPath)) {
+          fs.unlinkSync(oldContractPath);
+        }
       }
+      contractImage = req.files.contractImage[0].filename;
     }
-    contractImage = req.file.filename;
+    
+    // معالجة ملف العقد PDF إذا تم توفيره
+    if (req.files.contractPdf && req.files.contractPdf.length > 0) {
+      // حذف ملف العقد القديم إذا وجد
+      if (reservation.contractPdf) {
+        const oldPdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
+        if (fs.existsSync(oldPdfPath)) {
+          fs.unlinkSync(oldPdfPath);
+        }
+      }
+      contractPdf = req.files.contractPdf[0].filename;
+    }
   }
   
-  // Update reservation
+  // تحديث الحجز
   await reservation.update({
+    contractType: contractType || reservation.contractType,
     startDate: startDate || reservation.startDate,
     endDate: endDate || reservation.endDate,
     contractImage,
+    contractPdf,
+    paymentMethod: paymentMethod || reservation.paymentMethod,
+    paymentSchedule: paymentSchedule || reservation.paymentSchedule,
+    includesDeposit: includesDeposit !== undefined ? 
+      (includesDeposit === 'true' || includesDeposit === true) : 
+      reservation.includesDeposit,
+    depositAmount: depositAmount !== undefined ? depositAmount : reservation.depositAmount,
     status: status || reservation.status,
-    notes: notes || reservation.notes
+    notes: notes !== undefined ? notes : reservation.notes
   });
   
-  // If status changed to cancelled or expired, update unit status to available
+  // إذا تغيرت الحالة إلى ملغاة أو منتهية، قم بتحديث حالة الوحدة إلى متاحة
   if ((status === 'cancelled' || status === 'expired') && reservation.status === 'active') {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
@@ -328,15 +356,15 @@ const updateReservation = catchAsync(async (req, res, next) => {
   });
 });
 
-// Delete reservation
+// حذف حجز
 const deleteReservation = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id);
   
   if (!reservation) {
-    return next(new AppError('Reservation not found', 404));
+    return next(new AppError('الحجز غير موجود', 404));
   }
   
-  // Delete contract image if it exists
+  // حذف صورة العقد إذا وجدت
   if (reservation.contractImage) {
     const contractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
     if (fs.existsSync(contractPath)) {
@@ -344,7 +372,15 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // Update unit status to available if reservation was active
+  // حذف ملف العقد PDF إذا وجد
+  if (reservation.contractPdf) {
+    const pdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
+    if (fs.existsSync(pdfPath)) {
+      fs.unlinkSync(pdfPath);
+    }
+  }
+  
+  // تحديث حالة الوحدة إلى متاحة إذا كان الحجز نشطًا
   if (reservation.status === 'active') {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
@@ -360,7 +396,7 @@ const deleteReservation = catchAsync(async (req, res, next) => {
   });
 });
 
-// Get reservations by unit ID
+// الحصول على الحجوزات حسب معرف الوحدة
 const getReservationsByUnitId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({
     where: { unitId: req.params.unitId },
@@ -376,7 +412,7 @@ const getReservationsByUnitId = catchAsync(async (req, res) => {
   });
 });
 
-// Get reservations by user ID
+// الحصول على الحجوزات حسب معرف المستخدم
 const getReservationsByUserId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({
     where: { userId: req.params.userId },

@@ -10,16 +10,10 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { UPLOAD_PATHS } = require('../config/upload');
 
-// Set up storage for reservation-related files
+// إعداد تخزين ملفات العقود
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
-    if (file.fieldname === 'contractImage') {
-      cb(null, UPLOAD_PATHS.contracts);
-    } else if (file.fieldname === 'identityImage' || file.fieldname === 'commercialRegisterImage') {
-      cb(null, UPLOAD_PATHS.identities);
-    } else {
-      cb(new Error('Invalid field name for file upload'));
-    }
+    cb(null, UPLOAD_PATHS.contracts);
   },
   filename: function(req, file, cb) {
     const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;
@@ -38,7 +32,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, GIF and PDF are allowed.'), false);
+    cb(new Error('نوع الملف غير مقبول. يسمح فقط بـ JPEG و PNG و GIF و PDF'), false);
   }
 };
 
@@ -46,52 +40,54 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024 // الحد 5 ميجابايت
   }
 });
 
-// Apply auth middleware to all routes
+// تطبيق وسيط المصادقة على جميع المسارات
 router.use(authMiddleware);
 
-// Get my reservations
+// الحصول على حجوزاتي
 router.get('/my', reservationController.getMyReservations);
 
-// Admin/Manager routes
+// مسارات المسؤولين والمديرين
 router.get('/', isAdminOrManager, reservationController.getAllReservations);
 
-// Get reservation by ID
+// الحصول على حجز حسب المعرف
 router.get('/:id', reservationController.getReservationById);
 
-// Create reservation with multiple file uploads
+// إنشاء حجز جديد مع رفع الملفات
 router.post(
   '/',
   isAdminOrManager,
   upload.fields([
     { name: 'contractImage', maxCount: 1 },
-    { name: 'identityImage', maxCount: 1 },
-    { name: 'commercialRegisterImage', maxCount: 1 }
+    { name: 'contractPdf', maxCount: 1 }
   ]),
   reservationValidationRules,
   validate,
   reservationController.createReservation
 );
 
-// Update reservation
+// تحديث حجز
 router.put(
   '/:id',
   isAdminOrManager,
-  upload.single('contractImage'),
+  upload.fields([
+    { name: 'contractImage', maxCount: 1 },
+    { name: 'contractPdf', maxCount: 1 }
+  ]),
   validate,
   reservationController.updateReservation
 );
 
-// Delete reservation
+// حذف حجز
 router.delete('/:id', isAdminOrManager, reservationController.deleteReservation);
 
-// Get reservations by unit ID
+// الحصول على الحجوزات حسب معرف الوحدة
 router.get('/unit/:unitId', reservationController.getReservationsByUnitId);
 
-// Get reservations by user ID
+// الحصول على الحجوزات حسب معرف المستخدم
 router.get('/user/:userId', reservationController.getReservationsByUserId);
 
 module.exports = router;

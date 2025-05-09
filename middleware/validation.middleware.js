@@ -1,7 +1,7 @@
-// Validation middleware 
+// middleware/validation.middleware.js
 const { validationResult, check } = require('express-validator');
 
-// Validation middleware to check for errors
+// وسيط التحقق من الأخطاء
 const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -9,96 +9,127 @@ const validate = (req, res, next) => {
   }
   next();
 };
-const resetManagerPasswordvalidate=[
-  check('managerId').isInt().withMessage('Manager ID must be an integer'),
-  check('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+
+// قواعد التحقق من إعادة تعيين كلمة مرور المدير
+const resetManagerPasswordvalidate = [
+  check('managerId').isInt().withMessage('معرف المدير يجب أن يكون رقمًا صحيحًا'),
+  check('newPassword').isLength({ min: 6 }).withMessage('كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل')
 ];
 
-// User validation rules
+// قواعد التحقق من المستخدم
 const userValidationRules = [
-  check('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
-  check('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  check('fullName').notEmpty().withMessage('Full name is required'),
-  check('email').optional({ nullable: true }).isEmail().withMessage('Valid email is required'),
-  check('phone').optional({ nullable: true })
+  check('username').optional().isLength({ min: 3 }).withMessage('اسم المستخدم يجب أن يكون 3 أحرف على الأقل'),
+  check('password').optional().isLength({ min: 6 }).withMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
+  check('fullName').optional().notEmpty().withMessage('الاسم الكامل مطلوب'),
+  check('email').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني غير صالح'),
+  check('phone').optional({ nullable: true }),
+  check('whatsappNumber').optional({ nullable: true }),
+  check('idNumber').optional({ nullable: true })
 ];
 
-// Company validation rules
-// Company validation rules
-const companyValidationRules = [
-    check('name').notEmpty().withMessage('Company name is required'),
-    check('email').optional({ nullable: true }).isEmail().withMessage('Valid email is required'),
-    check('phone').optional({ nullable: true }),
-    check('address').optional({ nullable: true }),
-    check('managerFullName').optional({ nullable: true }),
-    check('managerEmail').optional({ nullable: true }).isEmail().withMessage('Valid manager email is required'),
-    check('managerPhone').optional({ nullable: true })
-  ];
+// قواعد التحقق من المستأجر
+const tenantValidationRules = [
+  check('userId').optional().isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
+  check('tenantType').optional().isIn([
+    'partnership', 
+    'commercial_register', 
+    'person', 
+    'embassy', 
+    'foreign_company', 
+    'government', 
+    'inheritance', 
+    'civil_registry'
+  ]).withMessage('نوع المستأجر غير صالح'),
+  check('businessActivities').optional({ nullable: true }),
+  check('contactPerson').optional({ nullable: true }),
+  check('contactPosition').optional({ nullable: true }),
+  check('notes').optional({ nullable: true })
+];
 
-// تعديل قواعد التحقق للمبنى
+// قواعد التحقق من الشركة
+const companyValidationRules = [
+  check('name').notEmpty().withMessage('اسم الشركة مطلوب'),
+  check('email').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني غير صالح'),
+  check('phone').optional({ nullable: true }),
+  check('address').optional({ nullable: true }),
+  check('managerFullName').optional({ nullable: true }),
+  check('managerEmail').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني للمدير غير صالح'),
+  check('managerPhone').optional({ nullable: true })
+];
+
+// قواعد التحقق من المبنى
 const buildingValidationRules = [
   check('buildingNumber').notEmpty().withMessage('رقم المبنى مطلوب'),
   check('name').notEmpty().withMessage('اسم المبنى مطلوب'),
   check('address').notEmpty().withMessage('عنوان المبنى مطلوب'),
   check('buildingType').isIn(['residential', 'commercial', 'mixed']).withMessage('نوع المبنى غير صالح'),
-  check('totalUnits').optional({ nullable: true }).isInt().withMessage('إجمالي الوحدات يجب أن يكون رقماً صحيحاً'),
-  check('totalFloors').optional({ nullable: true }).isInt().withMessage('عدد الطوابق يجب أن يكون رقماً صحيحاً'),
-  check('internalParkingSpaces').optional({ nullable: true }).isInt().withMessage('عدد المواقف الداخلية يجب أن يكون رقماً صحيحاً'),
+  check('totalUnits').optional({ nullable: true }).isInt().withMessage('إجمالي الوحدات يجب أن يكون رقمًا صحيحًا'),
+  check('totalFloors').optional({ nullable: true }).isInt().withMessage('عدد الطوابق يجب أن يكون رقمًا صحيحًا'),
+  check('internalParkingSpaces').optional({ nullable: true }).isInt().withMessage('عدد المواقف الداخلية يجب أن يكون رقمًا صحيحًا'),
   check('description').optional({ nullable: true })
 ];
 
-// Real Estate Unit validation rules
+// قواعد التحقق من الوحدة العقارية
 const unitValidationRules = [
-  check('buildingId').isInt().withMessage('يجب أن يكون معرف المبنى رقمًا صحيحًا'),
+  check('buildingId').isInt().withMessage('معرف المبنى يجب أن يكون رقمًا صحيحًا'),
   check('unitNumber').notEmpty().withMessage('رقم الوحدة مطلوب'),
   check('unitType').isIn(['studio', 'apartment', 'shop', 'office', 'villa', 'room']).withMessage('نوع الوحدة غير صالح'),
   check('unitLayout').optional({ nullable: true }).isIn(['studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other']).withMessage('تخطيط الوحدة غير صالح'),
-  check('floor').optional({ nullable: true }).isInt().withMessage('يجب أن يكون الطابق رقمًا صحيحًا'),
-  check('area').optional({ nullable: true }).isNumeric().withMessage('يجب أن تكون المساحة رقمًا'),
-  check('bedrooms').optional({ nullable: true }).isInt().withMessage('يجب أن يكون عدد غرف النوم رقمًا صحيحًا'),
-  check('bathrooms').optional({ nullable: true }).isInt().withMessage('يجب أن يكون عدد الحمامات رقمًا صحيحًا'),
-  check('price').isNumeric().withMessage('يجب أن يكون السعر رقمًا'),
+  check('floor').optional({ nullable: true }).isInt().withMessage('الطابق يجب أن يكون رقمًا صحيحًا'),
+  check('area').optional({ nullable: true }).isNumeric().withMessage('المساحة يجب أن تكون رقمًا'),
+  check('bedrooms').optional({ nullable: true }).isInt().withMessage('عدد غرف النوم يجب أن يكون رقمًا صحيحًا'),
+  check('bathrooms').optional({ nullable: true }).isInt().withMessage('عدد الحمامات يجب أن يكون رقمًا صحيحًا'),
+  check('price').isNumeric().withMessage('السعر يجب أن يكون رقمًا'),
   check('status').optional({ nullable: true }).isIn(['available', 'rented', 'maintenance']).withMessage('حالة الوحدة غير صالحة'),
   check('description').optional({ nullable: true })
 ];
-// Reservation validation rules
+
+// قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
 const reservationValidationRules = [
-  check('userId').optional({nullable:true}).isInt().withMessage('User ID must be an integer'),
-  check('unitId').isInt().withMessage('Unit ID must be an integer'),
-  check('startDate').isDate().withMessage('Valid start date is required'),
-  check('endDate').isDate().withMessage('Valid end date is required'),
-  check('status').optional({ nullable: true }).isIn(['active', 'expired', 'cancelled']).withMessage('Invalid status'),
+  check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
+  check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
+  check('contractType').optional({ nullable: true }).isIn(['residential', 'commercial']).withMessage('نوع العقد يجب أن يكون سكني أو تجاري'),
+  check('startDate').isDate().withMessage('تاريخ بداية العقد مطلوب وبتنسيق صحيح'),
+  check('endDate').isDate().withMessage('تاريخ نهاية العقد مطلوب وبتنسيق صحيح'),
+  check('status').optional({ nullable: true }).isIn(['active', 'expired', 'cancelled']).withMessage('حالة الحجز غير صالحة'),
+  check('paymentMethod').optional({ nullable: true }).isIn(['cash', 'checks']).withMessage('طريقة الدفع يجب أن تكون نقدًا أو شيكات'),
+  check('paymentSchedule').optional({ nullable: true }).isIn([
+    'monthly', 'quarterly', 'triannual', 'biannual', 'annual'
+  ]).withMessage('جدول الدفع غير صالح'),
+  check('includesDeposit').optional({ nullable: true }).isBoolean().withMessage('يشمل الضمان يجب أن يكون قيمة منطقية'),
+  check('depositAmount').optional({ nullable: true }).isNumeric().withMessage('قيمة الضمان يجب أن تكون رقمًا'),
   check('notes').optional({ nullable: true })
 ];
 
-// Service Order validation rules
+// قواعد التحقق من طلب الخدمة
 const serviceOrderValidationRules = [
-  check('reservationId').isInt().withMessage('Reservation ID must be an integer'),
-  check('serviceType').isIn(['financial', 'maintenance', 'administrative']).withMessage('Invalid service type'),
-  check('serviceSubtype').notEmpty().withMessage('Service subtype is required'),
-  check('description').notEmpty().withMessage('Description is required'),
-  check('status').optional({ nullable: true }).isIn(['pending', 'in-progress', 'completed', 'rejected']).withMessage('Invalid status')
+  check('reservationId').isInt().withMessage('معرف الحجز يجب أن يكون رقمًا صحيحًا'),
+  check('serviceType').isIn(['financial', 'maintenance', 'administrative']).withMessage('نوع الخدمة غير صالح'),
+  check('serviceSubtype').notEmpty().withMessage('النوع الفرعي للخدمة مطلوب'),
+  check('description').notEmpty().withMessage('وصف الخدمة مطلوب'),
+  check('status').optional({ nullable: true }).isIn(['pending', 'in-progress', 'completed', 'rejected']).withMessage('حالة الطلب غير صالحة')
 ];
 
-// Payment validation rules
+// قواعد التحقق من الدفع
 const paymentValidationRules = [
-  check('reservationId').isInt().withMessage('Reservation ID must be an integer'),
-  check('amount').isNumeric().withMessage('Amount must be a number'),
-  check('paymentDate').isDate().withMessage('Valid payment date is required'),
+  check('reservationId').isInt().withMessage('معرف الحجز يجب أن يكون رقمًا صحيحًا'),
+  check('amount').isNumeric().withMessage('المبلغ يجب أن يكون رقمًا'),
+  check('paymentDate').isDate().withMessage('تاريخ الدفع مطلوب وبتنسيق صحيح'),
   check('paymentMethod').optional({ nullable: true }),
-  check('status').optional({ nullable: true }).isIn(['paid', 'pending', 'delayed', 'cancelled']).withMessage('Invalid status'),
+  check('status').optional({ nullable: true }).isIn(['paid', 'pending', 'delayed', 'cancelled']).withMessage('حالة الدفع غير صالحة'),
   check('notes').optional({ nullable: true })
 ];
 
-// Login validation rules
+// قواعد التحقق من تسجيل الدخول
 const loginValidationRules = [
-  check('username').notEmpty().withMessage('Username is required'),
-  check('password').notEmpty().withMessage('Password is required')
+  check('username').notEmpty().withMessage('اسم المستخدم مطلوب'),
+  check('password').notEmpty().withMessage('كلمة المرور مطلوبة')
 ];
 
 module.exports = {
   validate,
   userValidationRules,
+  tenantValidationRules,
   companyValidationRules,
   buildingValidationRules,
   unitValidationRules,

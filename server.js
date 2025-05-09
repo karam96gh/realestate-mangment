@@ -15,6 +15,9 @@ const reservationRoutes = require('./routes/reservation.routes');
 const serviceOrderRoutes = require('./routes/serviceOrder.routes');
 const paymentHistoryRoutes = require('./routes/paymentHistory.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const tenantRoutes = require('./routes/tenant.routes');
+
+
 
 // Import error handler
 const { errorHandler } = require('./utils/errorHandler');
@@ -44,7 +47,8 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/services', serviceOrderRoutes);
 app.use('/api/payments', paymentHistoryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-
+// تسجيل المسارات في التطبيق
+app.use('/api/tenants', tenantRoutes);
 // Default route
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to Real Estate Management API' });

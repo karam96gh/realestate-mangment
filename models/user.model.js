@@ -6,7 +6,7 @@ const sequelize = require('../config/database');
 const { getFileUrl } = require('../utils/filePath');
 
 const User = sequelize.define('User', {
-  // الحقول الموجودة مسبقًا
+  // بيانات المستخدم الأساسية
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -32,15 +32,36 @@ const User = sequelize.define('User', {
   phone: {
     type: DataTypes.STRING(20)
   },
-  identityImage: {
+  // رقم الهاتف الثاني (واتساب)
+  whatsappNumber: {
+    type: DataTypes.STRING(20)
+  },
+  // رقم الهوية
+  idNumber: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  // صورة الهوية (الوجه)
+  identityImageFront: {
     type: DataTypes.STRING(255)
   },
-  identityImageUrl: {
+  identityImageFrontUrl: {
     type: DataTypes.VIRTUAL,
     get() {
-      return this.identityImage ? getFileUrl(this.identityImage, 'identities') : null;
+      return this.identityImageFront ? getFileUrl(this.identityImageFront, 'identities') : null;
     }
   },
+  // صورة الهوية (الخلف)
+  identityImageBack: {
+    type: DataTypes.STRING(255)
+  },
+  identityImageBackUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.identityImageBack ? getFileUrl(this.identityImageBack, 'identities') : null;
+    }
+  },
+  // صورة السجل التجاري
   commercialRegisterImage: {
     type: DataTypes.STRING(255)
   },
@@ -50,10 +71,12 @@ const User = sequelize.define('User', {
       return this.commercialRegisterImage ? getFileUrl(this.commercialRegisterImage, 'identities') : null;
     }
   },
+  // دور المستخدم
   role: {
     type: DataTypes.ENUM('admin', 'manager', 'tenant'),
     defaultValue: 'tenant'
   },
+  // معرف الشركة (للمديرين فقط)
   companyId: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -87,12 +110,12 @@ const User = sequelize.define('User', {
   }
 });
 
-// دالة للتحقق من كلمة المرور
+// دالة التحقق من كلمة المرور
 User.prototype.validatePassword = async function(password) {
   return await bcrypt.compare(password, this.password);
 };
 
-// طريقة لإرجاع كائن مستخدم آمن (بدون كلمة المرور)
+// دالة إرجاع كائن مستخدم آمن (بدون كلمة المرور)
 User.prototype.toJSON = function() {
   const values = { ...this.get() };
   delete values.password;

@@ -12,6 +12,7 @@ const Reservation = sequelize.define('Reservation', {
     primaryKey: true,
     autoIncrement: true
   },
+  // المستأجر (مرتبط بجدول المستخدمين)
   userId: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -20,6 +21,7 @@ const Reservation = sequelize.define('Reservation', {
       key: 'id'
     }
   },
+  // الوحدة العقارية
   unitId: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -28,14 +30,50 @@ const Reservation = sequelize.define('Reservation', {
       key: 'id'
     }
   },
+  // نوع العقد (سكني - تجاري)
+  contractType: {
+    type: DataTypes.ENUM('residential', 'commercial'),
+    allowNull: false,
+    defaultValue: 'residential'
+  },
+  // تاريخ بداية العقد
   startDate: {
     type: DataTypes.DATEONLY,
     allowNull: false
   },
+  // تاريخ نهاية العقد
   endDate: {
     type: DataTypes.DATEONLY,
     allowNull: false
   },
+  // مدة العقد (تُحسب تلقائيًا)
+  contractDuration: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      if (!this.startDate || !this.endDate) return null;
+      
+      const start = new Date(this.startDate);
+      const end = new Date(this.endDate);
+      
+      const yearDiff = end.getFullYear() - start.getFullYear();
+      const monthDiff = end.getMonth() - start.getMonth();
+      
+      const totalMonths = (yearDiff * 12) + monthDiff;
+      
+      // تنسيق العرض: سنوات وشهور
+      const years = Math.floor(totalMonths / 12);
+      const months = totalMonths % 12;
+      
+      if (years > 0 && months > 0) {
+        return `${years} سنة و ${months} شهر`;
+      } else if (years > 0) {
+        return `${years} سنة`;
+      } else {
+        return `${months} شهر`;
+      }
+    }
+  },
+  // صورة العقد
   contractImage: {
     type: DataTypes.STRING(255)
   },
@@ -46,10 +84,44 @@ const Reservation = sequelize.define('Reservation', {
       return `${process.env.BASE_URL || 'http://localhost:3000'}/uploads/contracts/${this.contractImage}`;
     }
   },
+  // ملف العقد PDF
+  contractPdf: {
+    type: DataTypes.STRING(255)
+  },
+  contractPdfUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      if (!this.contractPdf) return null;
+      return `${process.env.BASE_URL || 'http://localhost:3000'}/uploads/contracts/${this.contractPdf}`;
+    }
+  },
+  // طريقة الدفع (كاش - شيكات)
+  paymentMethod: {
+    type: DataTypes.ENUM('cash', 'checks'),
+    defaultValue: 'cash'
+  },
+  // آلية الدفع (شهري، ربع سنوي، إلخ)
+  paymentSchedule: {
+    type: DataTypes.ENUM('monthly', 'quarterly', 'triannual', 'biannual', 'annual'),
+    defaultValue: 'monthly',
+    comment: 'شهري، 4 دفعات، 3 دفعات، دفعتين، أو سنوي'
+  },
+  // هل يشمل الضمان؟
+  includesDeposit: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  // قيمة الضمان
+  depositAmount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true
+  },
+  // حالة الحجز
   status: {
     type: DataTypes.ENUM('active', 'expired', 'cancelled'),
     defaultValue: 'active'
   },
+  // ملاحظات
   notes: {
     type: DataTypes.TEXT
   },

@@ -46,7 +46,6 @@ const getAllUnits = catchAsync(async (req, res, next) => {
   });
 });
 
-// تعديل دالة getAvailableUnits
 const getAvailableUnits = catchAsync(async (req, res) => {
   // معلمات التصفية
   const { 
@@ -55,7 +54,9 @@ const getAvailableUnits = catchAsync(async (req, res) => {
     bedrooms, 
     bathrooms, 
     buildingId,
-    companyId 
+    companyId,
+    unitType, // إضافة فلتر نوع الوحدة
+    unitLayout // إضافة فلتر تخطيط الوحدة
   } = req.query;
   
   // بناء كائن التصفية
@@ -78,6 +79,16 @@ const getAvailableUnits = catchAsync(async (req, res) => {
   // إضافة الحمامات إذا تم توفيرها
   if (bathrooms !== undefined) {
     filter.bathrooms = parseInt(bathrooms);
+  }
+  
+  // إضافة نوع الوحدة إذا تم توفيرها
+  if (unitType !== undefined) {
+    filter.unitType = unitType;
+  }
+  
+  // إضافة تخطيط الوحدة إذا تم توفيرها
+  if (unitLayout !== undefined) {
+    filter.unitLayout = unitLayout;
   }
   
   // إضافة مصفاة المبنى
@@ -170,10 +181,13 @@ const getUnitById = catchAsync(async (req, res, next) => {
 
 
 // Create new unit
+// Create new unit
 const createUnit = catchAsync(async (req, res, next) => {
   const { 
     buildingId, 
     unitNumber, 
+    unitType,
+    unitLayout,
     floor, 
     area, 
     bedrooms, 
@@ -186,12 +200,14 @@ const createUnit = catchAsync(async (req, res, next) => {
   // Check if building exists
   const building = await Building.findByPk(buildingId);
   if (!building) {
-    return next(new AppError('Building not found', 404));
+    return next(new AppError('المبنى غير موجود', 404));
   }
   
   const newUnit = await RealEstateUnit.create({
     buildingId,
     unitNumber,
+    unitType,
+    unitLayout,
     floor,
     area,
     bedrooms,
@@ -212,11 +228,13 @@ const updateUnit = catchAsync(async (req, res, next) => {
   const unit = await RealEstateUnit.findByPk(req.params.id);
   
   if (!unit) {
-    return next(new AppError('Unit not found', 404));
+    return next(new AppError('الوحدة غير موجودة', 404));
   }
   
   const { 
     unitNumber, 
+    unitType,
+    unitLayout,
     floor, 
     area, 
     bedrooms, 
@@ -230,7 +248,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
   if (req.body.buildingId) {
     const building = await Building.findByPk(req.body.buildingId);
     if (!building) {
-      return next(new AppError('Building not found', 404));
+      return next(new AppError('المبنى غير موجود', 404));
     }
   }
   
@@ -238,6 +256,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
   await unit.update({
     buildingId: req.body.buildingId || unit.buildingId,
     unitNumber: unitNumber || unit.unitNumber,
+    unitType: unitType || unit.unitType,
+    unitLayout: unitLayout !== undefined ? unitLayout : unit.unitLayout,
     floor: floor !== undefined ? floor : unit.floor,
     area: area !== undefined ? area : unit.area,
     bedrooms: bedrooms !== undefined ? bedrooms : unit.bedrooms,

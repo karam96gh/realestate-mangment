@@ -88,14 +88,24 @@ const getBuildingById = catchAsync(async (req, res, next) => {
 });
 
 
-// Create new building
+// تعديل دالة إنشاء المبنى
 const createBuilding = catchAsync(async (req, res, next) => {
-  let { companyId, name, address, buildingType, totalUnits, description } = req.body;
+  let { 
+    companyId, 
+    buildingNumber,
+    name, 
+    address, 
+    buildingType, 
+    totalUnits, 
+    totalFloors, 
+    internalParkingSpaces,
+    description 
+  } = req.body;
   
   // If user is a manager, use their companyId and ignore any provided companyId
   if (req.user.role === 'manager') {
     if (!req.user.companyId) {
-      return next(new AppError('Manager is not associated with any company', 400));
+      return next(new AppError('المدير غير مرتبط بأي شركة', 400));
     }
     companyId = req.user.companyId;
   }
@@ -103,15 +113,18 @@ const createBuilding = catchAsync(async (req, res, next) => {
   // Check if company exists
   const company = await Company.findByPk(companyId);
   if (!company) {
-    return next(new AppError('Company not found', 404));
+    return next(new AppError('الشركة غير موجودة', 404));
   }
   
   const newBuilding = await Building.create({
     companyId,
+    buildingNumber,
     name,
     address,
     buildingType,
     totalUnits,
+    totalFloors: totalFloors || 1,
+    internalParkingSpaces: internalParkingSpaces || 0,
     description
   });
   
@@ -121,20 +134,29 @@ const createBuilding = catchAsync(async (req, res, next) => {
   });
 });
 
-// Update building
+// تعديل دالة تحديث المبنى
 const updateBuilding = catchAsync(async (req, res, next) => {
   const building = await Building.findByPk(req.params.id);
   
   if (!building) {
-    return next(new AppError('Building not found', 404));
+    return next(new AppError('المبنى غير موجود', 404));
   }
   
   // If user is a manager, verify they belong to the same company
   if (req.user.role === 'manager' && req.user.companyId !== building.companyId) {
-    return next(new AppError('You are not authorized to update this building', 403));
+    return next(new AppError('غير مصرح لك بتحديث هذا المبنى', 403));
   }
   
-  const { name, address, buildingType, totalUnits, description } = req.body;
+  const { 
+    buildingNumber,
+    name, 
+    address, 
+    buildingType, 
+    totalUnits, 
+    totalFloors, 
+    internalParkingSpaces,
+    description 
+  } = req.body;
   
   // If companyId is being updated, check if the new company exists
   // Only allow admins to change the companyId
@@ -142,7 +164,7 @@ const updateBuilding = catchAsync(async (req, res, next) => {
   if (req.user.role === 'admin' && req.body.companyId) {
     const company = await Company.findByPk(req.body.companyId);
     if (!company) {
-      return next(new AppError('Company not found', 404));
+      return next(new AppError('الشركة غير موجودة', 404));
     }
     companyId = req.body.companyId;
   }
@@ -150,10 +172,13 @@ const updateBuilding = catchAsync(async (req, res, next) => {
   // Update building
   await building.update({
     companyId,
+    buildingNumber: buildingNumber || building.buildingNumber,
     name: name || building.name,
     address: address || building.address,
     buildingType: buildingType || building.buildingType,
     totalUnits: totalUnits !== undefined ? totalUnits : building.totalUnits,
+    totalFloors: totalFloors !== undefined ? totalFloors : building.totalFloors,
+    internalParkingSpaces: internalParkingSpaces !== undefined ? internalParkingSpaces : building.internalParkingSpaces,
     description: description || building.description
   });
   
@@ -162,7 +187,6 @@ const updateBuilding = catchAsync(async (req, res, next) => {
     data: building
   });
 });
-
 // Delete building
 const deleteBuilding = catchAsync(async (req, res, next) => {
   const building = await Building.findByPk(req.params.id);

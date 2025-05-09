@@ -9,6 +9,11 @@ const Building = sequelize.define('Building', {
     primaryKey: true,
     autoIncrement: true
   },
+  buildingNumber: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    comment: 'رقم المبنى الخارجي'
+  },
   companyId: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -26,11 +31,24 @@ const Building = sequelize.define('Building', {
     allowNull: false
   },
   buildingType: {
-    type: DataTypes.ENUM('apartment', 'villa', 'commercial'),
-    allowNull: false
+    type: DataTypes.ENUM('residential', 'commercial', 'mixed'),
+    allowNull: false,
+    comment: 'سكني/تجاري/سكني-تجاري'
   },
   totalUnits: {
     type: DataTypes.INTEGER
+  },
+  totalFloors: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    comment: 'عدد الطوابق في المبنى'
+  },
+  internalParkingSpaces: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'عدد المواقف الداخلية'
   },
   description: {
     type: DataTypes.TEXT

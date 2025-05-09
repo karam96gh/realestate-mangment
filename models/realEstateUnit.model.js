@@ -21,6 +21,16 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
     type: DataTypes.STRING(20),
     allowNull: false
   },
+  unitType: {
+    type: DataTypes.ENUM('studio', 'apartment', 'shop', 'office', 'villa', 'room'),
+    allowNull: false,
+    comment: 'نوع الوحدة (ستديو/شقة/محل/مكتب/فيلا/غرفة)'
+  },
+  unitLayout: {
+    type: DataTypes.ENUM('studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other'),
+    allowNull: true,
+    comment: 'تخطيط الوحدة (عدد الغرف والمطابخ والحمامات)'
+  },
   floor: {
     type: DataTypes.INTEGER
   },

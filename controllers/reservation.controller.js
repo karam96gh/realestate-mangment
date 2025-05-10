@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
+const generatePassword = require('../utils/generatePassword');
 
 // الحصول على حجوزاتي
 const getMyReservations = catchAsync(async (req, res) => {
@@ -155,12 +156,12 @@ const getReservationById = catchAsync(async (req, res, next) => {
 });
 
 // إنشاء حجز جديد
+// إنشاء حجز جديد مع إنشاء مستأجر جديد
 const createReservation = catchAsync(async (req, res, next) => {
   console.log("Files received:", req.files); // سجل تصحيح
   console.log("Form data:", req.body);       // سجل تصحيح
   
   const {
-    userId,
     unitId,
     contractType,
     startDate,
@@ -169,7 +170,19 @@ const createReservation = catchAsync(async (req, res, next) => {
     paymentSchedule,
     includesDeposit,
     depositAmount,
-    notes
+    notes,
+    
+    // بيانات المستأجر الجديد
+    tenantFullName,
+    tenantEmail,
+    tenantPhone,
+    tenantWhatsappNumber,
+    tenantIdNumber,
+    tenantType,
+    tenantBusinessActivities,
+    tenantContactPerson,
+    tenantContactPosition,
+    tenantNotes
   } = req.body;
   
   // التحقق من وجود الوحدة وما إذا كانت متاحة
@@ -182,47 +195,82 @@ const createReservation = catchAsync(async (req, res, next) => {
     return next(new AppError('الوحدة غير متاحة للحجز', 400));
   }
   
-  // التحقق من وجود المستأجر
-  if (!userId) {
-    return next(new AppError('معرف المستأجر مطلوب', 400));
-  }
-  
-  const user = await User.findByPk(userId);
-  if (!user) {
-    return next(new AppError('المستأجر غير موجود', 404));
-  }
-  
-  // التحقق من أن المستخدم هو مستأجر
-  if (user.role !== 'tenant') {
-    return next(new AppError('المستخدم المحدد ليس مستأجرًا', 400));
-  }
-  
-  // التحقق من وجود معلومات المستأجر
-  let tenant = await Tenant.findOne({ where: { userId } });
-  if (!tenant) {
-    return next(new AppError('معلومات المستأجر غير مكتملة. الرجاء تسجيل المستأجر أولاً', 400));
-  }
-  
-  // معالجة الملفات المرفقة
-  let contractImage = null;
-  let contractPdf = null;
-    
-  if (req.files) {
-    if (req.files.contractImage && req.files.contractImage.length > 0) {
-      contractImage = req.files.contractImage[0].filename;
-      console.log("Contract image saved:", contractImage);
-    }
-    
-    if (req.files.contractPdf && req.files.contractPdf.length > 0) {
-      contractPdf = req.files.contractPdf[0].filename;
-      console.log("Contract PDF saved:", contractPdf);
-    }
+  // التحقق من البيانات المطلوبة للمستأجر الجديد
+  if (!tenantFullName) {
+    return next(new AppError('اسم المستأجر مطلوب', 400));
   }
   
   try {
+    // معالجة الملفات المرفقة
+    let contractImage = null;
+    let contractPdf = null;
+    let identityImageFront = null;
+    let identityImageBack = null;
+    let commercialRegisterImage = null;
+      
+    if (req.files) {
+      if (req.files.contractImage && req.files.contractImage.length > 0) {
+        contractImage = req.files.contractImage[0].filename;
+        console.log("Contract image saved:", contractImage);
+      }
+      
+      if (req.files.contractPdf && req.files.contractPdf.length > 0) {
+        contractPdf = req.files.contractPdf[0].filename;
+        console.log("Contract PDF saved:", contractPdf);
+      }
+      
+      if (req.files.identityImageFront && req.files.identityImageFront.length > 0) {
+        identityImageFront = req.files.identityImageFront[0].filename;
+        console.log("Identity front image saved:", identityImageFront);
+      }
+      
+      if (req.files.identityImageBack && req.files.identityImageBack.length > 0) {
+        identityImageBack = req.files.identityImageBack[0].filename;
+        console.log("Identity back image saved:", identityImageBack);
+      }
+      
+      if (req.files.commercialRegisterImage && req.files.commercialRegisterImage.length > 0) {
+        commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
+        console.log("Commercial register image saved:", commercialRegisterImage);
+      }
+    }
+    
+    // إنشاء اسم مستخدم فريد
+    const baseUsername = tenantFullName.replace(/\s+/g, '_').toLowerCase();
+    const timestamp = Date.now().toString().slice(-6);
+    const username = `${baseUsername}_${timestamp}`;
+    
+    // إنشاء كلمة مرور عشوائية
+    const password = generatePassword(8);
+    
+    // إنشاء مستخدم جديد من نوع مستأجر
+    const user = await User.create({
+      username,
+      password, // سيتم تشفيرها تلقائيًا بواسطة hooks في النموذج
+      fullName: tenantFullName,
+      email: tenantEmail,
+      phone: tenantPhone,
+      whatsappNumber: tenantWhatsappNumber,
+      idNumber: tenantIdNumber,
+      identityImageFront,
+      identityImageBack,
+      commercialRegisterImage,
+      role: 'tenant'
+    });
+    
+    // إنشاء سجل مستأجر مرتبط بالمستخدم
+    const tenant = await Tenant.create({
+      userId: user.id,
+      tenantType: tenantType || 'person',
+      businessActivities: tenantBusinessActivities,
+      contactPerson: tenantContactPerson,
+      contactPosition: tenantContactPosition,
+      notes: tenantNotes
+    });
+    
     // إنشاء الحجز
     const newReservation = await Reservation.create({
-      userId,
+      userId: user.id, // استخدام معرف المستخدم الجديد
       unitId,
       contractType: contractType || 'residential',
       startDate,
@@ -243,7 +291,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     // إنشاء عناوين URL للملفات
     const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
     
-    // إرجاع بيانات الحجز
+    // إرجاع بيانات الحجز وبيانات دخول المستأجر
     const responseData = {
       reservation: {
         ...newReservation.get({ plain: true }),
@@ -251,7 +299,14 @@ const createReservation = catchAsync(async (req, res, next) => {
         contractPdfUrl: contractPdf ? `${BASE_URL}/uploads/contracts/${contractPdf}` : null
       },
       unit: unit,
-      tenant: tenant
+      tenant: {
+        ...tenant.get({ plain: true }),
+        user: {
+          ...user.toJSON(), // استخدام toJSON لضمان عدم إرجاع كلمة المرور المشفرة
+          // إضافة كلمة المرور النصية للإرجاع مرة واحدة فقط
+          rawPassword: password
+        }
+      }
     };
     
     res.status(201).json({
@@ -260,21 +315,23 @@ const createReservation = catchAsync(async (req, res, next) => {
     });
   } catch (error) {
     // حذف الملفات المرفقة في حالة فشل الإنشاء
-    if (contractImage) {
-      const filePath = path.join(UPLOAD_PATHS.contracts, contractImage);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-    
-    if (contractPdf) {
-      const filePath = path.join(UPLOAD_PATHS.contracts, contractPdf);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // تنظيف الملفات إذا تم رفعها
+    if (req.files) {
+      Object.keys(req.files).forEach(fieldName => {
+        req.files[fieldName].forEach(file => {
+          const filePath = path.join(
+            fieldName.includes('contract') ? UPLOAD_PATHS.contracts : UPLOAD_PATHS.identities, 
+            file.filename
+          );
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        });
+      });
     }
     
     // رمي الخطأ لمعالجته في وحدة التحكم بالأخطاء المركزية
     throw error;
   }
 });
-
 // تحديث حجز
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 

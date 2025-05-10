@@ -57,15 +57,25 @@ router.get('/', isAdminOrManager, reservationController.getAllReservations);
 router.get('/:id', reservationController.getReservationById);
 
 // إنشاء حجز جديد مع رفع الملفات
+// تعديل تكوين رفع الملفات للسماح بملفات الهوية والسجل التجاري
+// إعداد تخزين ملفات العقود
+// (الجزء الحالي من الكود)...
+
+// تعديل تكوين رفع الملفات
+
+
+// تعديل مسار إنشاء الحجز ليقبل ملفات هوية المستأجر
 router.post(
   '/',
   isAdminOrManager,
   upload.fields([
     { name: 'contractImage', maxCount: 1 },
-    { name: 'contractPdf', maxCount: 1 }
+    { name: 'contractPdf', maxCount: 1 },
+    { name: 'identityImageFront', maxCount: 1 },
+    { name: 'identityImageBack', maxCount: 1 },
+    { name: 'commercialRegisterImage', maxCount: 1 }
   ]),
-  reservationValidationRules,
-  validate,
+  validate, // قد تحتاج لتعديل قواعد التحقق لقبول المتغيرات الجديدة
   reservationController.createReservation
 );
 

@@ -85,8 +85,11 @@ const unitValidationRules = [
 ];
 
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
+// قواعد التحقق من الحجز - محدثة لدعم إنشاء مستأجر جديد
 const reservationValidationRules = [
-  check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
+  // حذف التحقق من معرف المستخدم لأنه لم يعد مطلوبًا
+  // check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
+  
   check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
   check('contractType').optional({ nullable: true }).isIn(['residential', 'commercial']).withMessage('نوع العقد يجب أن يكون سكني أو تجاري'),
   check('startDate').isDate().withMessage('تاريخ بداية العقد مطلوب وبتنسيق صحيح'),
@@ -98,7 +101,28 @@ const reservationValidationRules = [
   ]).withMessage('جدول الدفع غير صالح'),
   check('includesDeposit').optional({ nullable: true }).isBoolean().withMessage('يشمل الضمان يجب أن يكون قيمة منطقية'),
   check('depositAmount').optional({ nullable: true }).isNumeric().withMessage('قيمة الضمان يجب أن تكون رقمًا'),
-  check('notes').optional({ nullable: true })
+  check('notes').optional({ nullable: true }),
+  
+  // إضافة قواعد التحقق من بيانات المستأجر الجديد
+  check('tenantFullName').notEmpty().withMessage('اسم المستأجر الكامل مطلوب'),
+  check('tenantEmail').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني للمستأجر غير صالح'),
+  check('tenantPhone').optional({ nullable: true }),
+  check('tenantWhatsappNumber').optional({ nullable: true }),
+  check('tenantIdNumber').optional({ nullable: true }),
+  check('tenantType').optional({ nullable: true }).isIn([
+    'partnership', 
+    'commercial_register', 
+    'person', 
+    'embassy', 
+    'foreign_company', 
+    'government', 
+    'inheritance', 
+    'civil_registry'
+  ]).withMessage('نوع المستأجر غير صالح'),
+  check('tenantBusinessActivities').optional({ nullable: true }),
+  check('tenantContactPerson').optional({ nullable: true }),
+  check('tenantContactPosition').optional({ nullable: true }),
+  check('tenantNotes').optional({ nullable: true })
 ];
 
 // قواعد التحقق من طلب الخدمة

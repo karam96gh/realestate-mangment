@@ -1,4 +1,4 @@
-// Real Estate Unit model 
+// Updated RealEstateUnit Model
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const Building = require('./building.model');
@@ -31,15 +31,15 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
     allowNull: true,
     comment: 'تخطيط الوحدة (عدد الغرف والمطابخ والحمامات)'
   },
+  // MODIFIED: Changed from INTEGER to STRING
   floor: {
-    type: DataTypes.INTEGER
+    type: DataTypes.STRING(20),
+    comment: 'الطابق - يمكن أن يحتوي على قيم مثل "الأرضي"، "الميزانين"، إلخ'
   },
   area: {
     type: DataTypes.DECIMAL(10, 2)
   },
-  bedrooms: {
-    type: DataTypes.INTEGER
-  },
+  // REMOVED: bedrooms field is no longer here
   bathrooms: {
     type: DataTypes.INTEGER
   },

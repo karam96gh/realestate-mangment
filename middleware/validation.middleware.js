@@ -47,14 +47,35 @@ const tenantValidationRules = [
 ];
 
 // قواعد التحقق من الشركة
+// Updated validation rules without bedrooms field and with companyType field
+const { validationResult, check } = require('express-validator');
+
+// Company validation rules - UPDATED with companyType
 const companyValidationRules = [
   check('name').notEmpty().withMessage('اسم الشركة مطلوب'),
+  check('companyType').optional().isIn(['owner', 'agency']).withMessage('نوع الشركة غير صالح، يجب أن يكون مالك أو شركة عقارية'),
   check('email').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني غير صالح'),
   check('phone').optional({ nullable: true }),
   check('address').optional({ nullable: true }),
   check('managerFullName').optional({ nullable: true }),
   check('managerEmail').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني للمدير غير صالح'),
   check('managerPhone').optional({ nullable: true })
+];
+
+// Unit validation rules - UPDATED with string floor and no bedrooms
+const unitValidationRules = [
+  check('buildingId').isInt().withMessage('معرف المبنى يجب أن يكون رقمًا صحيحًا'),
+  check('unitNumber').notEmpty().withMessage('رقم الوحدة مطلوب'),
+  check('unitType').isIn(['studio', 'apartment', 'shop', 'office', 'villa', 'room']).withMessage('نوع الوحدة غير صالح'),
+  check('unitLayout').optional({ nullable: true }).isIn(['studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other']).withMessage('تخطيط الوحدة غير صالح'),
+  // Modified floor validation - no longer integer
+  check('floor').optional({ nullable: true }).withMessage('الطابق يجب أن يكون صالحًا'),
+  check('area').optional({ nullable: true }).isNumeric().withMessage('المساحة يجب أن تكون رقمًا'),
+  // bedrooms validation removed
+  check('bathrooms').optional({ nullable: true }).isInt().withMessage('عدد الحمامات يجب أن يكون رقمًا صحيحًا'),
+  check('price').isNumeric().withMessage('السعر يجب أن يكون رقمًا'),
+  check('status').optional({ nullable: true }).isIn(['available', 'rented', 'maintenance']).withMessage('حالة الوحدة غير صالحة'),
+  check('description').optional({ nullable: true })
 ];
 
 // قواعد التحقق من المبنى
@@ -69,20 +90,7 @@ const buildingValidationRules = [
   check('description').optional({ nullable: true })
 ];
 
-// قواعد التحقق من الوحدة العقارية
-const unitValidationRules = [
-  check('buildingId').isInt().withMessage('معرف المبنى يجب أن يكون رقمًا صحيحًا'),
-  check('unitNumber').notEmpty().withMessage('رقم الوحدة مطلوب'),
-  check('unitType').isIn(['studio', 'apartment', 'shop', 'office', 'villa', 'room']).withMessage('نوع الوحدة غير صالح'),
-  check('unitLayout').optional({ nullable: true }).isIn(['studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other']).withMessage('تخطيط الوحدة غير صالح'),
-  check('floor').optional({ nullable: true }).isInt().withMessage('الطابق يجب أن يكون رقمًا صحيحًا'),
-  check('area').optional({ nullable: true }).isNumeric().withMessage('المساحة يجب أن تكون رقمًا'),
-  check('bedrooms').optional({ nullable: true }).isInt().withMessage('عدد غرف النوم يجب أن يكون رقمًا صحيحًا'),
-  check('bathrooms').optional({ nullable: true }).isInt().withMessage('عدد الحمامات يجب أن يكون رقمًا صحيحًا'),
-  check('price').isNumeric().withMessage('السعر يجب أن يكون رقمًا'),
-  check('status').optional({ nullable: true }).isIn(['available', 'rented', 'maintenance']).withMessage('حالة الوحدة غير صالحة'),
-  check('description').optional({ nullable: true })
-];
+
 
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
 // قواعد التحقق من الحجز - محدثة لدعم إنشاء مستأجر جديد

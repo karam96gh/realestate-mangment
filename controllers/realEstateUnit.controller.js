@@ -47,56 +47,50 @@ const getAllUnits = catchAsync(async (req, res, next) => {
 });
 
 const getAvailableUnits = catchAsync(async (req, res) => {
-  // معلمات التصفية
+  // Filter parameters
   const { 
     minPrice, 
     maxPrice, 
-    bedrooms, 
     bathrooms, 
     buildingId,
     companyId,
-    unitType, // إضافة فلتر نوع الوحدة
-    unitLayout // إضافة فلتر تخطيط الوحدة
+    unitType,
+    unitLayout
   } = req.query;
   
-  // بناء كائن التصفية
+  // Build filter object
   const filter = {
     status: 'available'
   };
   
-  // إضافة نطاق السعر إذا تم توفيره
+  // Add price range if provided
   if (minPrice !== undefined || maxPrice !== undefined) {
     filter.price = {};
     if (minPrice !== undefined) filter.price[Op.gte] = parseFloat(minPrice);
     if (maxPrice !== undefined) filter.price[Op.lte] = parseFloat(maxPrice);
   }
   
-  // إضافة غرف النوم إذا تم توفيرها
-  if (bedrooms !== undefined) {
-    filter.bedrooms = parseInt(bedrooms);
-  }
-  
-  // إضافة الحمامات إذا تم توفيرها
+  // Add bathrooms if provided
   if (bathrooms !== undefined) {
     filter.bathrooms = parseInt(bathrooms);
   }
   
-  // إضافة نوع الوحدة إذا تم توفيرها
+  // Add unit type if provided
   if (unitType !== undefined) {
     filter.unitType = unitType;
   }
   
-  // إضافة تخطيط الوحدة إذا تم توفيرها
+  // Add unit layout if provided
   if (unitLayout !== undefined) {
     filter.unitLayout = unitLayout;
   }
   
-  // إضافة مصفاة المبنى
+  // Add building filter
   if (buildingId !== undefined) {
     filter.buildingId = parseInt(buildingId);
   }
   
-  // خيارات التضمين
+  // Include options
   const includeOptions = [
     { 
       model: Building, 
@@ -107,12 +101,20 @@ const getAvailableUnits = catchAsync(async (req, res) => {
     }
   ];
   
-  // إضافة مصفاة الشركة إذا تم توفيرها
+  // MODIFIED: Priority for filtering by company
+  // 1. Query parameter companyId
+  // 2. Current user's companyId for managers
+  let effectiveCompanyId = null;
+  
   if (companyId !== undefined) {
-    includeOptions[0].where = { companyId: parseInt(companyId) };
+    effectiveCompanyId = parseInt(companyId);
   } else if (req.user.role === 'manager' && req.user.companyId) {
-    // إذا كان المستخدم مديرًا، فقط إظهار وحدات شركته
-    includeOptions[0].where = { companyId: req.user.companyId };
+    // Use company ID from the authenticated user's token
+    effectiveCompanyId = req.user.companyId;
+  }
+  
+  if (effectiveCompanyId) {
+    includeOptions[0].where = { companyId: effectiveCompanyId };
   }
   
   const availableUnits = await RealEstateUnit.findAll({
@@ -181,7 +183,6 @@ const getUnitById = catchAsync(async (req, res, next) => {
 
 
 // Create new unit
-// Create new unit
 const createUnit = catchAsync(async (req, res, next) => {
   const { 
     buildingId, 
@@ -190,7 +191,7 @@ const createUnit = catchAsync(async (req, res, next) => {
     unitLayout,
     floor, 
     area, 
-    bedrooms, 
+    // bedrooms field removed
     bathrooms, 
     price, 
     status, 
@@ -203,6 +204,13 @@ const createUnit = catchAsync(async (req, res, next) => {
     return next(new AppError('المبنى غير موجود', 404));
   }
   
+  // If user is a manager, verify they belong to the same company
+  if (req.user.role === 'manager') {
+    if (building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بإنشاء وحدات في مبنى لا ينتمي لشركتك', 403));
+    }
+  }
+  
   const newUnit = await RealEstateUnit.create({
     buildingId,
     unitNumber,
@@ -210,7 +218,7 @@ const createUnit = catchAsync(async (req, res, next) => {
     unitLayout,
     floor,
     area,
-    bedrooms,
+    // bedrooms removed
     bathrooms,
     price,
     status: status || 'available',
@@ -223,12 +231,23 @@ const createUnit = catchAsync(async (req, res, next) => {
   });
 });
 
-// Update unit
 const updateUnit = catchAsync(async (req, res, next) => {
-  const unit = await RealEstateUnit.findByPk(req.params.id);
+  const unit = await RealEstateUnit.findByPk(req.params.id, {
+    include: [{ 
+      model: Building, 
+      as: 'building'
+    }]
+  });
   
   if (!unit) {
     return next(new AppError('الوحدة غير موجودة', 404));
+  }
+  
+  // If user is a manager, verify they belong to the same company
+  if (req.user.role === 'manager') {
+    if (unit.building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بتعديل وحدات لا تنتمي لشركتك', 403));
+    }
   }
   
   const { 
@@ -237,7 +256,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
     unitLayout,
     floor, 
     area, 
-    bedrooms, 
+    // bedrooms removed
     bathrooms, 
     price, 
     status, 
@@ -250,6 +269,11 @@ const updateUnit = catchAsync(async (req, res, next) => {
     if (!building) {
       return next(new AppError('المبنى غير موجود', 404));
     }
+    
+    // If user is a manager, verify the new building belongs to their company
+    if (req.user.role === 'manager' && building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بنقل الوحدة إلى مبنى لا ينتمي لشركتك', 403));
+    }
   }
   
   // Update unit
@@ -260,7 +284,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
     unitLayout: unitLayout !== undefined ? unitLayout : unit.unitLayout,
     floor: floor !== undefined ? floor : unit.floor,
     area: area !== undefined ? area : unit.area,
-    bedrooms: bedrooms !== undefined ? bedrooms : unit.bedrooms,
+    // bedrooms removed
     bathrooms: bathrooms !== undefined ? bathrooms : unit.bathrooms,
     price: price !== undefined ? price : unit.price,
     status: status || unit.status,
@@ -272,6 +296,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
     data: unit
   });
 });
+
+
 
 // Delete unit
 const deleteUnit = catchAsync(async (req, res, next) => {

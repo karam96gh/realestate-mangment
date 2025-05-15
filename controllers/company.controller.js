@@ -44,29 +44,40 @@ const getCompanyById = catchAsync(async (req, res, next) => {
 // controllers/company.controller.js - فقط الجزء الذي يحتاج تعديل
 
 // تحديث دالة createCompany لاستخدام المسارات الصحيحة وإعادة روابط الملفات
+// Updated Company Controller functions
 const createCompany = catchAsync(async (req, res) => {
-  const { name, email, phone, address, managerFullName, managerEmail, managerPhone } = req.body;
+  const { 
+    name, 
+    email, 
+    phone, 
+    address, 
+    companyType, // NEW: added companyType
+    managerFullName, 
+    managerEmail, 
+    managerPhone 
+  } = req.body;
   
-  // معالجة رفع الشعار إذا تم توفيره
+  // Handle logo upload if provided
   let logoImage = null;
   if (req.file) {
     logoImage = req.file.filename;
   }
 
-  // إنشاء الشركة أولاً
+  // Create company with new companyType field
   const newCompany = await Company.create({
     name,
     email,
     phone,
     address,
+    companyType: companyType || 'agency', // Default to 'agency' if not specified
     logoImage
   });
 
-  // إنشاء بيانات اعتماد المدير
+  // Create manager credentials
   const username = `manager_${newCompany.id}_${Date.now()}`;
   const password = generatePassword(10);
 
-  // إنشاء مستخدم مدير مع معرف الشركة
+  // Create manager user with company ID
   const manager = await User.create({
     username,
     password,
@@ -74,18 +85,18 @@ const createCompany = catchAsync(async (req, res) => {
     email: managerEmail || email,
     phone: managerPhone || phone,
     role: 'manager',
-    companyId: newCompany.id  // تعيين معرف الشركة
+    companyId: newCompany.id
   });
 
-  // إرجاع معلومات الشركة والمدير
+  // Return company and manager info
   res.status(201).json({
     status: 'success',
     data: {
-      company: newCompany,  // سيتضمن logoImageUrl بفضل getter المضاف
+      company: newCompany,
       manager: {
         id: manager.id,
         username: manager.username,
-        password: password, // يتم إرسالها مرة واحدة فقط عند الإنشاء
+        password: password, // Only sent once when created
         fullName: manager.fullName,
         email: manager.email,
         role: manager.role,
@@ -94,6 +105,7 @@ const createCompany = catchAsync(async (req, res) => {
     }
   });
 });
+
 // Update company
 const updateCompany = catchAsync(async (req, res, next) => {
   const company = await Company.findByPk(req.params.id);
@@ -102,7 +114,13 @@ const updateCompany = catchAsync(async (req, res, next) => {
     return next(new AppError('Company not found', 404));
   }
   
-  const { name, email, phone, address } = req.body;
+  const { 
+    name, 
+    email, 
+    phone, 
+    address, 
+    companyType // NEW: added companyType
+  } = req.body;
   
   // Handle logo upload if provided
   let logoImage = company.logoImage;
@@ -117,12 +135,13 @@ const updateCompany = catchAsync(async (req, res, next) => {
     logoImage = req.file.filename;
   }
   
-  // Update company
+  // Update company with companyType
   await company.update({
     name: name || company.name,
     email: email || company.email,
     phone: phone || company.phone,
     address: address || company.address,
+    companyType: companyType || company.companyType,
     logoImage
   });
   
@@ -131,6 +150,8 @@ const updateCompany = catchAsync(async (req, res, next) => {
     data: company
   });
 });
+// Update company
+
 
 // Delete company
 const deleteCompany = catchAsync(async (req, res, next) => {

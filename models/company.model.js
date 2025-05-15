@@ -6,7 +6,7 @@ const User = require('./user.model');
 const { getFileUrl } = require('../utils/filePath');
 
 const Company = sequelize.define('Company', {
-  // الحقول الموجودة مسبقًا
+  // Existing fields
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -15,6 +15,13 @@ const Company = sequelize.define('Company', {
   name: {
     type: DataTypes.STRING(100),
     allowNull: false
+  },
+  // ADD COMPANY TYPE FIELD
+  companyType: {
+    type: DataTypes.ENUM('owner', 'agency'),
+    allowNull: false,
+    defaultValue: 'agency',
+    comment: 'نوع الشركة: مالك أو شركة عقارية'
   },
   email: {
     type: DataTypes.STRING(100),
@@ -45,7 +52,7 @@ const Company = sequelize.define('Company', {
   }
 });
 
-// تعريف العلاقات
+// Existing associations
 Company.hasOne(User, {
   foreignKey: 'companyId',
   as: 'manager',

@@ -45,39 +45,64 @@ const getCompanyById = catchAsync(async (req, res, next) => {
 
 // تحديث دالة createCompany لاستخدام المسارات الصحيحة وإعادة روابط الملفات
 // Updated Company Controller functions
+// تعديل دالة createCompany في controllers/company.controller.js
+
 const createCompany = catchAsync(async (req, res) => {
   const { 
     name, 
     email, 
-    phone, 
+    phone,
+    whatsappNumber,
+    secondaryPhone,
+    registrationNumber,
+    delegateName,
     address, 
-    companyType, // NEW: added companyType
+    companyType, 
     managerFullName, 
     managerEmail, 
     managerPhone 
   } = req.body;
   
-  // Handle logo upload if provided
+  // معالجة الملفات المرفقة
   let logoImage = null;
-  if (req.file) {
-    logoImage = req.file.filename;
+  let identityImageFront = null;
+  let identityImageBack = null;
+
+  if (req.files) {
+    if (req.files.logoImage && req.files.logoImage.length > 0) {
+      logoImage = req.files.logoImage[0].filename;
+    }
+    
+    if (req.files.identityImageFront && req.files.identityImageFront.length > 0) {
+      identityImageFront = req.files.identityImageFront[0].filename;
+    }
+    
+    if (req.files.identityImageBack && req.files.identityImageBack.length > 0) {
+      identityImageBack = req.files.identityImageBack[0].filename;
+    }
   }
 
-  // Create company with new companyType field
+  // إنشاء الشركة مع الحقول الجديدة
   const newCompany = await Company.create({
     name,
     email,
     phone,
+    whatsappNumber,
+    secondaryPhone,
+    registrationNumber,
+    delegateName,
     address,
-    companyType: companyType || 'agency', // Default to 'agency' if not specified
-    logoImage
+    companyType: companyType || 'agency',
+    logoImage,
+    identityImageFront,
+    identityImageBack
   });
 
-  // Create manager credentials
+  // إنشاء بيانات اعتماد المدير
   const username = `manager_${newCompany.id}_${Date.now()}`;
   const password = generatePassword(10);
 
-  // Create manager user with company ID
+  // إنشاء مستخدم مدير مرتبط بالشركة
   const manager = await User.create({
     username,
     password,
@@ -88,7 +113,7 @@ const createCompany = catchAsync(async (req, res) => {
     companyId: newCompany.id
   });
 
-  // Return company and manager info
+  // إرجاع بيانات الشركة والمدير
   res.status(201).json({
     status: 'success',
     data: {
@@ -96,7 +121,7 @@ const createCompany = catchAsync(async (req, res) => {
       manager: {
         id: manager.id,
         username: manager.username,
-        password: password, // Only sent once when created
+        password: password, // ترسل مرة واحدة فقط عند الإنشاء
         fullName: manager.fullName,
         email: manager.email,
         role: manager.role,
@@ -106,43 +131,83 @@ const createCompany = catchAsync(async (req, res) => {
   });
 });
 
-// Update company
+// تعديل دالة updateCompany
 const updateCompany = catchAsync(async (req, res, next) => {
   const company = await Company.findByPk(req.params.id);
   
   if (!company) {
-    return next(new AppError('Company not found', 404));
+    return next(new AppError('الشركة غير موجودة', 404));
   }
   
   const { 
     name, 
     email, 
-    phone, 
+    phone,
+    whatsappNumber,
+    secondaryPhone,
+    registrationNumber,
+    delegateName,
     address, 
-    companyType // NEW: added companyType
+    companyType 
   } = req.body;
   
-  // Handle logo upload if provided
+  // معالجة الملفات المرفقة
   let logoImage = company.logoImage;
-  if (req.file) {
-    // Delete old logo if it exists
-    if (company.logoImage) {
-      const oldLogoPath = path.join(UPLOAD_PATHS.logos, company.logoImage);
-      if (fs.existsSync(oldLogoPath)) {
-        fs.unlinkSync(oldLogoPath);
+  let identityImageFront = company.identityImageFront;
+  let identityImageBack = company.identityImageBack;
+
+  if (req.files) {
+    // معالجة الشعار إذا تم توفيره
+    if (req.files.logoImage && req.files.logoImage.length > 0) {
+      // حذف الشعار القديم إذا كان موجودًا
+      if (company.logoImage) {
+        const oldLogoPath = path.join(UPLOAD_PATHS.logos, company.logoImage);
+        if (fs.existsSync(oldLogoPath)) {
+          fs.unlinkSync(oldLogoPath);
+        }
       }
+      logoImage = req.files.logoImage[0].filename;
     }
-    logoImage = req.file.filename;
+    
+    // معالجة صورة البطاقة الأمامية إذا تم توفيرها
+    if (req.files.identityImageFront && req.files.identityImageFront.length > 0) {
+      // حذف الصورة القديمة إذا كانت موجودة
+      if (company.identityImageFront) {
+        const oldImagePath = path.join(UPLOAD_PATHS.identities, company.identityImageFront);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      identityImageFront = req.files.identityImageFront[0].filename;
+    }
+    
+    // معالجة صورة البطاقة الخلفية إذا تم توفيرها
+    if (req.files.identityImageBack && req.files.identityImageBack.length > 0) {
+      // حذف الصورة القديمة إذا كانت موجودة
+      if (company.identityImageBack) {
+        const oldImagePath = path.join(UPLOAD_PATHS.identities, company.identityImageBack);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+      identityImageBack = req.files.identityImageBack[0].filename;
+    }
   }
   
-  // Update company with companyType
+  // تحديث الشركة مع الحقول الجديدة
   await company.update({
     name: name || company.name,
     email: email || company.email,
     phone: phone || company.phone,
+    whatsappNumber: whatsappNumber || company.whatsappNumber,
+    secondaryPhone: secondaryPhone || company.secondaryPhone,
+    registrationNumber: registrationNumber || company.registrationNumber,
+    delegateName: delegateName || company.delegateName,
     address: address || company.address,
     companyType: companyType || company.companyType,
-    logoImage
+    logoImage,
+    identityImageFront,
+    identityImageBack
   });
   
   res.status(200).json({
@@ -153,19 +218,38 @@ const updateCompany = catchAsync(async (req, res, next) => {
 // Update company
 
 
+
 // Delete company
+// تعديل دالة deleteCompany في controllers/company.controller.js
+
 const deleteCompany = catchAsync(async (req, res, next) => {
   const company = await Company.findByPk(req.params.id);
   
   if (!company) {
-    return next(new AppError('Company not found', 404));
+    return next(new AppError('الشركة غير موجودة', 404));
   }
   
-  // Delete logo if it exists
+  // حذف الشعار إذا كان موجوداً
   if (company.logoImage) {
     const logoPath = path.join(UPLOAD_PATHS.logos, company.logoImage);
     if (fs.existsSync(logoPath)) {
       fs.unlinkSync(logoPath);
+    }
+  }
+  
+  // حذف صورة البطاقة الأمامية إذا كانت موجودة
+  if (company.identityImageFront) {
+    const frontImagePath = path.join(UPLOAD_PATHS.identities, company.identityImageFront);
+    if (fs.existsSync(frontImagePath)) {
+      fs.unlinkSync(frontImagePath);
+    }
+  }
+  
+  // حذف صورة البطاقة الخلفية إذا كانت موجودة
+  if (company.identityImageBack) {
+    const backImagePath = path.join(UPLOAD_PATHS.identities, company.identityImageBack);
+    if (fs.existsSync(backImagePath)) {
+      fs.unlinkSync(backImagePath);
     }
   }
   

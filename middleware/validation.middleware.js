@@ -50,11 +50,18 @@ const tenantValidationRules = [
 // Updated validation rules without bedrooms field and with companyType field
 
 // Company validation rules - UPDATED with companyType
+// تعديل قواعد التحقق من الشركة في middleware/validation.middleware.js
+
+// Company validation rules - UPDATED with new fields
 const companyValidationRules = [
   check('name').notEmpty().withMessage('اسم الشركة مطلوب'),
   check('companyType').optional().isIn(['owner', 'agency']).withMessage('نوع الشركة غير صالح، يجب أن يكون مالك أو شركة عقارية'),
   check('email').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني غير صالح'),
   check('phone').optional({ nullable: true }),
+  check('whatsappNumber').optional({ nullable: true }),
+  check('secondaryPhone').optional({ nullable: true }),
+  check('registrationNumber').optional({ nullable: true }),
+  check('delegateName').optional({ nullable: true }),
   check('address').optional({ nullable: true }),
   check('managerFullName').optional({ nullable: true }),
   check('managerEmail').optional({ nullable: true }).isEmail().withMessage('البريد الإلكتروني للمدير غير صالح'),

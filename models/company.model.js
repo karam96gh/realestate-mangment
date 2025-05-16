@@ -6,7 +6,7 @@ const User = require('./user.model');
 const { getFileUrl } = require('../utils/filePath');
 
 const Company = sequelize.define('Company', {
-  // Existing fields
+  // الحقول الحالية
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -16,7 +16,6 @@ const Company = sequelize.define('Company', {
     type: DataTypes.STRING(100),
     allowNull: false
   },
-  // ADD COMPANY TYPE FIELD
   companyType: {
     type: DataTypes.ENUM('owner', 'agency'),
     allowNull: false,
@@ -30,6 +29,46 @@ const Company = sequelize.define('Company', {
   phone: {
     type: DataTypes.STRING(20)
   },
+  
+  // الحقول الجديدة المطلوبة
+  whatsappNumber: {
+    type: DataTypes.STRING(20),
+    comment: 'رقم الواتساب للشركة'
+  },
+  secondaryPhone: {
+    type: DataTypes.STRING(20),
+    comment: 'رقم الهاتف الثاني للشركة'
+  },
+  identityImageFront: {
+    type: DataTypes.STRING(255),
+    comment: 'صورة البطاقة الشخصية الأمامية'
+  },
+  identityImageFrontUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.identityImageFront ? getFileUrl(this.identityImageFront, 'identities') : null;
+    }
+  },
+  identityImageBack: {
+    type: DataTypes.STRING(255),
+    comment: 'صورة البطاقة الشخصية الخلفية'
+  },
+  identityImageBackUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.identityImageBack ? getFileUrl(this.identityImageBack, 'identities') : null;
+    }
+  },
+  registrationNumber: {
+    type: DataTypes.STRING(50),
+    comment: 'رقم السجل التجاري'
+  },
+  delegateName: {
+    type: DataTypes.STRING(100),
+    comment: 'اسم المفوض'
+  },
+  
+  // الحقول الحالية
   address: {
     type: DataTypes.TEXT
   },
@@ -52,7 +91,7 @@ const Company = sequelize.define('Company', {
   }
 });
 
-// Existing associations
+// العلاقات الحالية
 Company.hasOne(User, {
   foreignKey: 'companyId',
   as: 'manager',

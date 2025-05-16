@@ -12,6 +12,9 @@ const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
 const generatePassword = require('../utils/generatePassword');
+const { generatePaymentSchedule } = require('../utils/paymentScheduler');
+const PaymentHistory = require('../models/paymentHistory.model');
+const sequelize = require('../config/database');
 
 // الحصول على حجوزاتي
 const getMyReservations = catchAsync(async (req, res) => {
@@ -160,7 +163,8 @@ const getReservationById = catchAsync(async (req, res, next) => {
 const createReservation = catchAsync(async (req, res, next) => {
   console.log("Files received:", req.files); // سجل تصحيح
   console.log("Form data:", req.body);       // سجل تصحيح
-  
+    const transaction = await sequelize.transaction();
+
   const {
     unitId,
     contractType,
@@ -171,7 +175,6 @@ const createReservation = catchAsync(async (req, res, next) => {
     includesDeposit,
     depositAmount,
     notes,
-    
     // بيانات المستأجر الجديد
     tenantFullName,
     tenantEmail,
@@ -288,6 +291,26 @@ const createReservation = catchAsync(async (req, res, next) => {
     // تحديث حالة الوحدة إلى مؤجرة
     await unit.update({ status: 'rented' });
     
+    const totalRentalAmount = unit.price;
+    const paymentScheduleData = generatePaymentSchedule(newReservation, totalRentalAmount);
+ const paymentPromises = paymentScheduleData.map(paymentData => {
+      return PaymentHistory.create({
+        reservationId: newReservation.id,
+        amount: paymentData.amount,
+        paymentDate: paymentData.paymentDate,
+        paymentMethod: newReservation.paymentMethod,
+        status: 'pending',
+        notes: paymentData.notes
+      }, { transaction });
+    });
+        const createdPayments = await Promise.all(paymentPromises);
+    await transaction.commit();
+
+
+
+
+
+
     // إنشاء عناوين URL للملفات
     const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
     
@@ -306,7 +329,9 @@ const createReservation = catchAsync(async (req, res, next) => {
           // إضافة كلمة المرور النصية للإرجاع مرة واحدة فقط
           rawPassword: password
         }
-      }
+      },
+            paymentSchedule: createdPayments.map(payment => payment.toJSON())
+
     };
     
     res.status(201).json({
@@ -316,6 +341,8 @@ const createReservation = catchAsync(async (req, res, next) => {
   } catch (error) {
     // حذف الملفات المرفقة في حالة فشل الإنشاء
     // تنظيف الملفات إذا تم رفعها
+        await transaction.rollback();
+
     if (req.files) {
       Object.keys(req.files).forEach(fieldName => {
         req.files[fieldName].forEach(file => {

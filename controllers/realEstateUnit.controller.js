@@ -47,15 +47,11 @@ const getAllUnits = catchAsync(async (req, res, next) => {
 });
 
 const getAvailableUnits = catchAsync(async (req, res) => {
-  // Filter parameters
+  // Filter parameters - removed companyId from destructuring
   const { 
-    minPrice, 
-    maxPrice, 
-    bathrooms, 
-    buildingId,
-    companyId,
-    unitType,
-    unitLayout
+    
+    buildingId
+    
   } = req.query;
   
   // Build filter object
@@ -64,26 +60,9 @@ const getAvailableUnits = catchAsync(async (req, res) => {
   };
   
   // Add price range if provided
-  if (minPrice !== undefined || maxPrice !== undefined) {
-    filter.price = {};
-    if (minPrice !== undefined) filter.price[Op.gte] = parseFloat(minPrice);
-    if (maxPrice !== undefined) filter.price[Op.lte] = parseFloat(maxPrice);
-  }
-  
-  // Add bathrooms if provided
-  if (bathrooms !== undefined) {
-    filter.bathrooms = parseInt(bathrooms);
-  }
-  
-  // Add unit type if provided
-  if (unitType !== undefined) {
-    filter.unitType = unitType;
-  }
-  
-  // Add unit layout if provided
-  if (unitLayout !== undefined) {
-    filter.unitLayout = unitLayout;
-  }
+
+ 
+
   
   // Add building filter
   if (buildingId !== undefined) {
@@ -101,20 +80,11 @@ const getAvailableUnits = catchAsync(async (req, res) => {
     }
   ];
   
-  // MODIFIED: Priority for filtering by company
-  // 1. Query parameter companyId
-  // 2. Current user's companyId for managers
-  let effectiveCompanyId = null;
-  
-  if (companyId !== undefined) {
-    effectiveCompanyId = parseInt(companyId);
-  } else if (req.user.role === 'manager' && req.user.companyId) {
+  // MODIFIED: Only get companyId from req.user
+  // Remove the previous logic with effectiveCompanyId
+  if (req.user.role === 'manager' && req.user.companyId) {
     // Use company ID from the authenticated user's token
-    effectiveCompanyId = req.user.companyId;
-  }
-  
-  if (effectiveCompanyId) {
-    includeOptions[0].where = { companyId: effectiveCompanyId };
+    includeOptions[0].where = { companyId: req.user.companyId };
   }
   
   const availableUnits = await RealEstateUnit.findAll({

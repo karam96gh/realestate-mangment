@@ -161,56 +161,56 @@ const getReservationById = catchAsync(async (req, res, next) => {
 // إنشاء حجز جديد
 // إنشاء حجز جديد مع إنشاء مستأجر جديد
 const createReservation = catchAsync(async (req, res, next) => {
-  console.log("Files received:", req.files); // سجل تصحيح
-  console.log("Form data:", req.body);       // سجل تصحيح
-    const transaction = await sequelize.transaction();
+  console.log("Files received:", req.files); // Debug log
+  console.log("Form data:", req.body);       // Debug log
+  const transaction = await sequelize.transaction();
 
-  const {
-    unitId,
-    contractType,
-    startDate,
-    endDate,
-    paymentMethod,
-    paymentSchedule,
-    includesDeposit,
-    depositAmount,
-    notes,
-    // بيانات المستأجر الجديد
-    tenantFullName,
-    tenantEmail,
-    tenantPhone,
-    tenantWhatsappNumber,
-    tenantIdNumber,
-    tenantType,
-    tenantBusinessActivities,
-    tenantContactPerson,
-    tenantContactPosition,
-    tenantNotes
-  } = req.body;
-  
-  // التحقق من وجود الوحدة وما إذا كانت متاحة
-  const unit = await RealEstateUnit.findByPk(unitId);
-  if (!unit) {
-    return next(new AppError('الوحدة غير موجودة', 404));
-  }
-  
-  if (unit.status !== 'available') {
-    return next(new AppError('الوحدة غير متاحة للحجز', 400));
-  }
-  
-  // التحقق من البيانات المطلوبة للمستأجر الجديد
-  if (!tenantFullName) {
-    return next(new AppError('اسم المستأجر مطلوب', 400));
-  }
-  
   try {
-    // معالجة الملفات المرفقة
+    const {
+      unitId,
+      contractType,
+      startDate,
+      endDate,
+      paymentMethod,
+      paymentSchedule,
+      includesDeposit,
+      depositAmount,
+      notes,
+      // Tenant data
+      tenantFullName,
+      tenantEmail,
+      tenantPhone,
+      tenantWhatsappNumber,
+      tenantIdNumber,
+      tenantType,
+      tenantBusinessActivities,
+      tenantContactPerson,
+      tenantContactPosition,
+      tenantNotes
+    } = req.body;
+    
+    // Check if unit exists and is available
+    const unit = await RealEstateUnit.findByPk(unitId);
+    if (!unit) {
+      return next(new AppError('الوحدة غير موجودة', 404));
+    }
+    
+    if (unit.status !== 'available') {
+      return next(new AppError('الوحدة غير متاحة للحجز', 400));
+    }
+    
+    // Check for required tenant data
+    if (!tenantFullName) {
+      return next(new AppError('اسم المستأجر مطلوب', 400));
+    }
+    
+    // Process uploaded files
     let contractImage = null;
     let contractPdf = null;
     let identityImageFront = null;
     let identityImageBack = null;
     let commercialRegisterImage = null;
-      
+        
     if (req.files) {
       if (req.files.contractImage && req.files.contractImage.length > 0) {
         contractImage = req.files.contractImage[0].filename;
@@ -238,18 +238,18 @@ const createReservation = catchAsync(async (req, res, next) => {
       }
     }
     
-    // إنشاء اسم مستخدم فريد
+    // Create unique username
     const baseUsername = tenantFullName.replace(/\s+/g, '_').toLowerCase();
     const timestamp = Date.now().toString().slice(-6);
     const username = `${baseUsername}_${timestamp}`;
     
-    // إنشاء كلمة مرور عشوائية
+    // Create random password
     const password = generatePassword(8);
     
-    // إنشاء مستخدم جديد من نوع مستأجر
+    // Create tenant user
     const user = await User.create({
       username,
-      password, // سيتم تشفيرها تلقائيًا بواسطة hooks في النموذج
+      password,
       fullName: tenantFullName,
       email: tenantEmail,
       phone: tenantPhone,
@@ -259,9 +259,9 @@ const createReservation = catchAsync(async (req, res, next) => {
       identityImageBack,
       commercialRegisterImage,
       role: 'tenant'
-    });
+    }, { transaction });
     
-    // إنشاء سجل مستأجر مرتبط بالمستخدم
+    // Create tenant record
     const tenant = await Tenant.create({
       userId: user.id,
       tenantType: tenantType || 'person',
@@ -269,11 +269,11 @@ const createReservation = catchAsync(async (req, res, next) => {
       contactPerson: tenantContactPerson,
       contactPosition: tenantContactPosition,
       notes: tenantNotes
-    });
+    }, { transaction });
     
-    // إنشاء الحجز
+    // Create reservation
     const newReservation = await Reservation.create({
-      userId: user.id, // استخدام معرف المستخدم الجديد
+      userId: user.id,
       unitId,
       contractType: contractType || 'residential',
       startDate,
@@ -286,14 +286,17 @@ const createReservation = catchAsync(async (req, res, next) => {
       depositAmount: depositAmount || null,
       status: 'active',
       notes
-    });
+    }, { transaction });
     
-    // تحديث حالة الوحدة إلى مؤجرة
-    await unit.update({ status: 'rented' });
+    // Update unit status to rented
+    await unit.update({ status: 'rented' }, { transaction });
     
-    const totalRentalAmount = unit.price;
-    const paymentScheduleData = generatePaymentSchedule(newReservation, totalRentalAmount);
- const paymentPromises = paymentScheduleData.map(paymentData => {
+    // Generate payment schedule - FIXED PART STARTS HERE
+    // Pass the unit price directly to the generatePaymentSchedule function
+    const paymentScheduleData = generatePaymentSchedule(newReservation, unit.price);
+    
+    // Create payment records
+    const paymentPromises = paymentScheduleData.map(paymentData => {
       return PaymentHistory.create({
         reservationId: newReservation.id,
         amount: paymentData.amount,
@@ -303,18 +306,16 @@ const createReservation = catchAsync(async (req, res, next) => {
         notes: paymentData.notes
       }, { transaction });
     });
-        const createdPayments = await Promise.all(paymentPromises);
+    
+    const createdPayments = await Promise.all(paymentPromises);
+    // FIXED PART ENDS HERE
+    
     await transaction.commit();
 
-
-
-
-
-
-    // إنشاء عناوين URL للملفات
+    // Create file URLs
     const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
     
-    // إرجاع بيانات الحجز وبيانات دخول المستأجر
+    // Prepare response data
     const responseData = {
       reservation: {
         ...newReservation.get({ plain: true }),
@@ -325,13 +326,11 @@ const createReservation = catchAsync(async (req, res, next) => {
       tenant: {
         ...tenant.get({ plain: true }),
         user: {
-          ...user.toJSON(), // استخدام toJSON لضمان عدم إرجاع كلمة المرور المشفرة
-          // إضافة كلمة المرور النصية للإرجاع مرة واحدة فقط
+          ...user.toJSON(),
           rawPassword: password
         }
       },
-            paymentSchedule: createdPayments.map(payment => payment.toJSON())
-
+      paymentSchedule: createdPayments.map(payment => payment.toJSON())
     };
     
     res.status(201).json({
@@ -339,10 +338,10 @@ const createReservation = catchAsync(async (req, res, next) => {
       data: responseData
     });
   } catch (error) {
-    // حذف الملفات المرفقة في حالة فشل الإنشاء
-    // تنظيف الملفات إذا تم رفعها
-        await transaction.rollback();
+    // Rollback transaction on error
+    await transaction.rollback();
 
+    // Delete uploaded files if any
     if (req.files) {
       Object.keys(req.files).forEach(fieldName => {
         req.files[fieldName].forEach(file => {
@@ -355,7 +354,7 @@ const createReservation = catchAsync(async (req, res, next) => {
       });
     }
     
-    // رمي الخطأ لمعالجته في وحدة التحكم بالأخطاء المركزية
+    // Throw error for central error handler
     throw error;
   }
 });

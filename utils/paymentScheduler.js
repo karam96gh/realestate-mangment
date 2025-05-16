@@ -1,29 +1,36 @@
-// utils/paymentScheduler.js
 
 /**
- * توليد جدول الدفعات بناءً على معلومات الحجز والوحدة
- * @param {Object} reservation - كائن الحجز
- * @param {Object} unit - كائن الوحدة العقارية
- * @returns {Array} مصفوفة من كائنات الدفعات
+ * Generate payment schedule based on reservation information and unit price
+ * @param {Object} reservation - The reservation object
+ * @param {number} unitPrice - The unit price (monthly rate)
+ * @returns {Array} Array of payment objects
  */
-const generatePaymentSchedule = (reservation, unit) => {
+const generatePaymentSchedule = (reservation, unitPrice) => {
   const { startDate, endDate, paymentSchedule } = reservation;
   
-  // تحويل التواريخ إلى كائنات Date
+  // Convert dates to Date objects
   const start = new Date(startDate);
   const end = new Date(endDate);
   
-  // حساب المدة بالأشهر
+  // Calculate duration in months
   const durationInMonths = calculateDurationInMonths(start, end);
   
-  // حساب المبلغ الإجمالي للإيجار
-  // إذا كان price يمثل القيمة الشهرية:
-  const totalRentalAmount = unit.price * durationInMonths;
+  // If the duration is negative or zero, we need to handle it
+  if (durationInMonths <= 0) {
+    console.error("Warning: Negative or zero duration calculated between", startDate, "and", endDate);
+    // Return at least one payment for the first month
+    return [{
+      amount: unitPrice,
+      paymentDate: formatDate(start),
+      status: 'pending',
+      notes: 'دفعة 1 من 1 (تصحيح تواريخ العقد مطلوب)'
+    }];
+  }
   
-  // أو إذا كان price يمثل القيمة السنوية:
-  // const totalRentalAmount = unit.price * (durationInMonths / 12);
+  // Calculate total rental amount based on duration and unit price
+  const totalRentalAmount = unitPrice * durationInMonths;
   
-  // تحديد عدد الدفعات بناءً على جدول الدفع
+  // Determine number of payments based on payment schedule
   let numberOfPayments;
   switch (paymentSchedule) {
     case 'monthly':
@@ -45,18 +52,21 @@ const generatePaymentSchedule = (reservation, unit) => {
       numberOfPayments = durationInMonths;
   }
   
-  // حساب مبلغ كل دفعة
+  // Ensure we have at least one payment
+  numberOfPayments = Math.max(1, numberOfPayments);
+  
+  // Calculate payment amount
   const paymentAmount = (totalRentalAmount / numberOfPayments).toFixed(2);
   
-  // توليد مصفوفة الدفعات
+  // Generate payments array
   const payments = [];
   let currentDate = new Date(start);
   
   for (let i = 0; i < numberOfPayments; i++) {
-    // تحديد تاريخ استحقاق الدفعة
+    // Set payment due date
     const dueDate = new Date(currentDate);
     
-    // إنشاء كائن الدفعة
+    // Create payment object
     payments.push({
       amount: paymentAmount,
       paymentDate: formatDate(dueDate),
@@ -64,7 +74,7 @@ const generatePaymentSchedule = (reservation, unit) => {
       notes: `دفعة ${i + 1} من ${numberOfPayments}`
     });
     
-    // حساب تاريخ الدفعة التالية
+    // Calculate next payment date
     currentDate = addMonthsToDate(currentDate, getMonthsBySchedule(paymentSchedule));
   }
   
@@ -72,21 +82,22 @@ const generatePaymentSchedule = (reservation, unit) => {
 };
 
 /**
- * حساب المدة بالأشهر بين تاريخين
- * @param {Date} start - تاريخ البداية
- * @param {Date} end - تاريخ النهاية
- * @returns {number} المدة بالأشهر
+ * Calculate duration in months between two dates
+ * @param {Date} start - Start date
+ * @param {Date} end - End date
+ * @returns {number} Duration in months
  */
 const calculateDurationInMonths = (start, end) => {
-  return (end.getFullYear() - start.getFullYear()) * 12 + 
-         (end.getMonth() - start.getMonth());
+  const yearDiff = end.getFullYear() - start.getFullYear();
+  const monthDiff = end.getMonth() - start.getMonth();
+  return (yearDiff * 12) + monthDiff;
 };
 
 /**
- * إضافة عدد محدد من الأشهر إلى تاريخ
- * @param {Date} date - التاريخ الأصلي
- * @param {number} months - عدد الأشهر
- * @returns {Date} التاريخ الجديد
+ * Add a specific number of months to a date
+ * @param {Date} date - Original date
+ * @param {number} months - Number of months to add
+ * @returns {Date} New date
  */
 const addMonthsToDate = (date, months) => {
   const newDate = new Date(date);
@@ -95,9 +106,9 @@ const addMonthsToDate = (date, months) => {
 };
 
 /**
- * الحصول على عدد الأشهر بناءً على جدول الدفع
- * @param {string} schedule - جدول الدفع
- * @returns {number} عدد الأشهر
+ * Get the number of months based on payment schedule
+ * @param {string} schedule - Payment schedule
+ * @returns {number} Number of months
  */
 const getMonthsBySchedule = (schedule) => {
   switch (schedule) {
@@ -111,9 +122,9 @@ const getMonthsBySchedule = (schedule) => {
 };
 
 /**
- * تنسيق التاريخ إلى صيغة YYYY-MM-DD
- * @param {Date} date - كائن التاريخ
- * @returns {string} التاريخ بصيغة YYYY-MM-DD
+ * Format date to YYYY-MM-DD
+ * @param {Date} date - Date object
+ * @returns {string} Formatted date string
  */
 const formatDate = (date) => {
   return date.toISOString().split('T')[0];

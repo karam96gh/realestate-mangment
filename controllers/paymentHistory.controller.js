@@ -72,7 +72,9 @@ const getAllPayments = catchAsync(async (req, res, next) => {
   
   const payments = await PaymentHistory.findAll({
     where: whereCondition,
-    include: includeOptions
+    include: includeOptions,
+      order: [['paymentDate', 'ASC']] // ترتيب حسب تاريخ الدفع (الأقدم أولاً)
+
   });
   
   res.status(200).json({
@@ -326,7 +328,8 @@ const getPaymentsByReservationId = catchAsync(async (req, res, next) => {
           as: 'building'
         }]
       }
-    ]
+    ],
+
   });
   
   if (!reservation) {
@@ -347,7 +350,9 @@ const getPaymentsByReservationId = catchAsync(async (req, res, next) => {
   }
   
   const payments = await PaymentHistory.findAll({
-    where: { reservationId }
+    where: { reservationId },
+      order: [['paymentDate', 'ASC']] // ترتيب حسب تاريخ الدفع (الأقدم أولاً)
+
   });
   
   res.status(200).json({

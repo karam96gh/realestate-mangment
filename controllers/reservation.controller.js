@@ -123,7 +123,7 @@ const getAllReservations = catchAsync(async (req, res, next) => {
 const getReservationById = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id, {
     include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } },
+      { model: User, as: 'user' },
       { 
         model: RealEstateUnit, 
         as: 'unit',

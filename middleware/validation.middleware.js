@@ -48,7 +48,6 @@ const tenantValidationRules = [
 
 // قواعد التحقق من الشركة
 // Updated validation rules without bedrooms field and with companyType field
-const { validationResult, check } = require('express-validator');
 
 // Company validation rules - UPDATED with companyType
 const companyValidationRules = [

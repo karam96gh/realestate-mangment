@@ -46,57 +46,64 @@ const getAllUnits = catchAsync(async (req, res, next) => {
   });
 });
 
-const getAvailableUnits = catchAsync(async (req, res) => {
-  // Filter parameters - removed companyId from destructuring
-  const { 
+const getAvailableUnits = catchAsync(async (req, res, next) => {
+  try {
+    console.log("getAvailableUnits function called");
+    console.log("Query parameters:", req.query);
+    console.log("User:", req.user);
     
-    buildingId
+    // Get building ID from query
+    const { buildingId } = req.query;
     
-  } = req.query;
-  
-  // Build filter object
-  const filter = {
-    status: 'available'
-  };
-  
-  // Add price range if provided
-
- 
-
-  
-  // Add building filter
-  if (buildingId !== undefined) {
-    filter.buildingId = parseInt(buildingId);
-  }
-  
-  // Include options
-  const includeOptions = [
-    { 
-      model: Building, 
-      as: 'building',
-      include: [
-        { model: Company, as: 'company' }
-      ]
+    // Build filter object
+    const filter = {
+      status: 'available'
+    };
+    
+    // Add building filter if provided
+    if (buildingId !== undefined) {
+      filter.buildingId = parseInt(buildingId);
+      console.log("Filtering by buildingId:", buildingId);
     }
-  ];
-  
-  // MODIFIED: Only get companyId from req.user
-  // Remove the previous logic with effectiveCompanyId
-  if (req.user.role === 'manager' && req.user.companyId) {
-    // Use company ID from the authenticated user's token
-    includeOptions[0].where = { companyId: req.user.companyId };
+    
+    // Include options for eager loading related models
+    const includeOptions = [
+      { 
+        model: Building, 
+        as: 'building',
+        include: [
+          { model: Company, as: 'company' }
+        ]
+      }
+    ];
+    
+    // If user is a manager, filter by their company ID
+    if (req.user && req.user.role === 'manager' && req.user.companyId) {
+      console.log("Manager filter applied, companyId:", req.user.companyId);
+      includeOptions[0].where = { companyId: req.user.companyId };
+    }
+    
+    console.log("Final filter:", JSON.stringify(filter));
+    console.log("Include options:", JSON.stringify(includeOptions));
+    
+    // Find all available units matching the criteria
+    const availableUnits = await RealEstateUnit.findAll({
+      where: filter,
+      include: includeOptions
+    });
+    
+    console.log("Query successful, found units:", availableUnits.length);
+    
+    // Send response
+    res.status(200).json({
+      status: 'success',
+      results: availableUnits.length,
+      data: availableUnits
+    });
+  } catch (error) {
+    console.error("Error in getAvailableUnits:", error);
+    return next(new AppError('Error fetching available units: ' + error.message, 500));
   }
-  
-  const availableUnits = await RealEstateUnit.findAll({
-    where: filter,
-    include: includeOptions
-  });
-  
-  res.status(200).json({
-    status: 'success',
-    results: availableUnits.length,
-    data: availableUnits
-  });
 });
 
 const getUnitById = catchAsync(async (req, res, next) => {

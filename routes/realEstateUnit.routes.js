@@ -12,7 +12,7 @@ router.get('/:id', realEstateUnitController.getUnitById);
 router.use(isAdminOrManager);
 // Public routes
 router.get('/', realEstateUnitController.getAllUnits);
-router.get('/available', realEstateUnitController.getAvailableUnits);
+router.get('/unit-building/available', realEstateUnitController.getAvailableUnits);
 router.get('/building/:buildingId', realEstateUnitController.getUnitsByBuildingId);
 
 // Protected routes

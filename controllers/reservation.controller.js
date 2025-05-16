@@ -245,11 +245,12 @@ const createReservation = catchAsync(async (req, res, next) => {
     
     // Create random password
     const password = generatePassword(8);
-    
+    const copassword=password;
     // Create tenant user
     const user = await User.create({
       username,
       password,
+      copassword,
       fullName: tenantFullName,
       email: tenantEmail,
       phone: tenantPhone,

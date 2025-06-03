@@ -138,8 +138,7 @@ router.post(
     { name: 'identityImageBack', maxCount: 1 },  // سيُحفظ في identities
     { name: 'commercialRegisterImage', maxCount: 1 } // سيُحفظ في identities
   ]),
-  handleUploadError, // معالجة أخطاء رفع الملفات
-  logFileInfo, // تسجيل معلومات الملفات (يمكن إزالته لاحقاً)
+  
   validateReservationContext, // تحقق مخصص للحجوزات
   reservationValidationRules,
   validate,

@@ -139,8 +139,6 @@ router.post(
     { name: 'commercialRegisterImage', maxCount: 1 } // سيُحفظ في identities
   ]),
   
-  validateReservationContext, // تحقق مخصص للحجوزات
-  reservationValidationRules,
   validate,
   reservationController.createReservation
 );

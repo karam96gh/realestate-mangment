@@ -53,6 +53,14 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     type: DataTypes.ENUM('pending', 'in-progress', 'completed', 'rejected'),
     defaultValue: 'pending'
   },
+  serviceHistory: {
+    type: DataTypes.JSON,
+    defaultValue: [],
+    get() {
+      const rawValue = this.getDataValue('serviceHistory');
+      return rawValue || [];
+    }
+  },
   createdAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
@@ -61,6 +69,33 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
   }
+});
+
+// Hook لإضافة السجل التاريخي عند تغيير الحالة
+ServiceOrder.addHook('beforeUpdate', (serviceOrder, options) => {
+  if (serviceOrder.changed('status')) {
+    const currentHistory = serviceOrder.serviceHistory || [];
+    const newHistoryEntry = {
+      status: serviceOrder.status,
+      date: new Date()
+    };
+    
+    serviceOrder.serviceHistory = [...currentHistory, newHistoryEntry];
+  }
+});
+
+// Hook لإضافة الحالة الأولى عند الإنشاء
+ServiceOrder.addHook('afterCreate', (serviceOrder, options) => {
+  const initialHistory = [{
+    status: serviceOrder.status,
+    date: serviceOrder.createdAt
+  }];
+  
+  serviceOrder.update({ 
+    serviceHistory: initialHistory 
+  }, { 
+    hooks: false // تجنب تشغيل beforeUpdate hook
+  });
 });
 
 // تعريف العلاقات

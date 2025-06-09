@@ -24,14 +24,8 @@ const getAllUnits = catchAsync(async (req, res, next) => {
       include: [
         { model: Company, as: 'company' }
       ]
-    },
-    {
-        model: RealEstateUnit,
-        as: 'units',
-       include: [
-        { model: Company, as: 'company' }
-      ]
-      }
+    }
+   
   ];
   
   if (req.user.role === 'manager') {
@@ -42,12 +36,18 @@ const getAllUnits = catchAsync(async (req, res, next) => {
   }
   
   if (req.user.role === 'owner') {
-    if (!req.user.companyId) {
-      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
-    }
-    includeOptions[1].where = { ownerId: req.user.id };
-  }
+     const units = await RealEstateUnit.findAll({
+    where: {ownerId:req.user.id},
+  });
   
+  res.status(200).json({
+    status: 'success',
+    results: units.length,
+    data: units
+  });
+  }
+  else
+  {
   const units = await RealEstateUnit.findAll({
     where: whereCondition,
     include: includeOptions
@@ -58,6 +58,9 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     results: units.length,
     data: units
   });
+  }
+  
+
 });
 
 const getAvailableUnits = catchAsync(async (req, res, next) => {

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const serviceOrderController = require('../controllers/serviceOrder.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager, isTenantOrManagerWithAccess } = require('../middleware/role.middleware');
+const { isAdminOrManager, isTenantOrManagerWithAccess, isAdminOrManagerOrMaintenance } = require('../middleware/role.middleware');
 const { validate, serviceOrderValidationRules } = require('../middleware/validation.middleware');
 const uploadMiddleware = require('../middleware/upload.middleware');
 
@@ -11,7 +11,7 @@ const uploadMiddleware = require('../middleware/upload.middleware');
 router.use(authMiddleware);
 
 // Admin/Manager routes
-router.get('/', isAdminOrManager, serviceOrderController.getAllServiceOrders);
+router.get('/', isAdminOrManagerOrMaintenance, serviceOrderController.getAllServiceOrders);
 
 // Get service order by ID - accessible to admin/manager and the tenant who owns the service order
 router.get('/:id', serviceOrderController.getServiceOrderById);

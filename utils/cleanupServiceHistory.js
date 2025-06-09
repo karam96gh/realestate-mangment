@@ -1,5 +1,5 @@
 // utils/cleanupServiceHistory.js
-// سكريبت لتنظيف البيانات المُخزنة بطريقة خاطئة
+// سكريبت لتنظيف البيانات المُخزنة بطريقة خاطئة وإزالة التكرارات
 
 const ServiceOrder = require('../models/serviceOrder.model');
 
@@ -33,13 +33,27 @@ const cleanupServiceHistory = async () => {
             needsUpdate = true;
           }
         } else if (Array.isArray(currentHistory)) {
-          // التحقق من صحة عناصر المصفوفة
-          cleanHistory = currentHistory.filter(entry => {
+          // تنظيف المصفوفة من العناصر الخاطئة والتكرارات
+          const validEntries = currentHistory.filter(entry => {
             return entry && 
                    typeof entry === 'object' && 
                    entry.status && 
                    entry.date;
           });
+          
+          // إزالة التكرارات بناءً على status + date
+          const uniqueEntries = [];
+          const seen = new Set();
+          
+          for (const entry of validEntries) {
+            const key = `${entry.status}-${entry.date}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueEntries.push(entry);
+            }
+          }
+          
+          cleanHistory = uniqueEntries;
           
           // إذا كانت المصفوفة فارغة بعد التنظيف
           if (cleanHistory.length === 0) {
@@ -61,6 +75,9 @@ const cleanupServiceHistory = async () => {
         needsUpdate = true;
       }
       
+      // ترتيب السجلات حسب التاريخ
+      cleanHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
+      
       // تحديث السجل إذا كان يحتاج تنظيف
       if (needsUpdate) {
         await serviceOrder.update({
@@ -69,7 +86,7 @@ const cleanupServiceHistory = async () => {
           hooks: false,
           silent: true
         });
-        console.log(`Cleaned up service order ${serviceOrder.id}`);
+        console.log(`Cleaned up service order ${serviceOrder.id} - removed ${currentHistory ? (Array.isArray(currentHistory) ? currentHistory.length - cleanHistory.length : 0) : 0} duplicates`);
       }
     }
     
@@ -79,4 +96,46 @@ const cleanupServiceHistory = async () => {
   }
 };
 
-module.exports = { cleanupServiceHistory };
+// دالة لإزالة جميع التكرارات من السجلات الموجودة
+const removeDuplicateEntries = async () => {
+  try {
+    const serviceOrders = await ServiceOrder.findAll();
+    
+    for (const serviceOrder of serviceOrders) {
+      const history = serviceOrder.serviceHistory || [];
+      
+      if (Array.isArray(history) && history.length > 1) {
+        // إزالة التكرارات
+        const uniqueEntries = [];
+        const seen = new Set();
+        
+        for (const entry of history) {
+          const key = `${entry.status}-${new Date(entry.date).toISOString()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueEntries.push(entry);
+          }
+        }
+        
+        if (uniqueEntries.length !== history.length) {
+          await serviceOrder.update({
+            serviceHistory: uniqueEntries.sort((a, b) => new Date(a.date) - new Date(b.date))
+          }, {
+            hooks: false,
+            silent: true
+          });
+          console.log(`Removed ${history.length - uniqueEntries.length} duplicates from service order ${serviceOrder.id}`);
+        }
+      }
+    }
+    
+    console.log('Duplicate removal completed!');
+  } catch (error) {
+    console.error('Error removing duplicates:', error);
+  }
+};
+
+module.exports = { 
+  cleanupServiceHistory, 
+  removeDuplicateEntries 
+};

@@ -242,37 +242,30 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     attachmentFile = req.file.filename;
   }
   
-  // تحديث السجل التاريخي يدوياً إذا تغيرت الحالة
-  let updatedHistory = serviceOrder.serviceHistory || [];
-  if (status && status !== serviceOrder.status) {
-    // التأكد من أن التاريخ الحالي هو array صحيح
-    if (typeof updatedHistory === 'string') {
-      try {
-        updatedHistory = JSON.parse(updatedHistory);
-      } catch (e) {
-        updatedHistory = [];
-      }
-    }
-    
-    if (!Array.isArray(updatedHistory)) {
-      updatedHistory = [];
-    }
-    
-    updatedHistory.push({
-      status: status,
-      date: new Date().toISOString()
-    });
-  }
-  
-  // Update service order
-  await serviceOrder.update({
+  // إعداد البيانات للتحديث
+  const updateData = {
     serviceType: serviceType || serviceOrder.serviceType,
     serviceSubtype: serviceSubtype || serviceOrder.serviceSubtype,
     description: description || serviceOrder.description,
-    attachmentFile,
-    status: status || serviceOrder.status,
-    serviceHistory: updatedHistory
-  });
+    attachmentFile
+  };
+  
+  // إضافة سجل جديد للتاريخ فقط إذا تغيرت الحالة
+  if (status && status !== serviceOrder.status) {
+    let currentHistory = serviceOrder.serviceHistory || [];
+    
+    // إضافة السجل الجديد
+    const newHistoryEntry = {
+      status: status,
+      date: new Date().toISOString()
+    };
+    
+    updateData.status = status;
+    updateData.serviceHistory = [...currentHistory, newHistoryEntry];
+  }
+  
+  // Update service order
+  await serviceOrder.update(updateData);
   
   // إعادة جلب السجل مع السجل التاريخي المحدث
   const updatedServiceOrder = await ServiceOrder.findByPk(serviceOrder.id, {

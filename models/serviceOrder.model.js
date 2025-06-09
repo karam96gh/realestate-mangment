@@ -58,7 +58,6 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
     defaultValue: [],
     get() {
       const rawValue = this.getDataValue('serviceHistory');
-      // التأكد من أن القيمة المُعادة هي array صحيح
       if (!rawValue) return [];
       if (typeof rawValue === 'string') {
         try {
@@ -68,14 +67,6 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
         }
       }
       return Array.isArray(rawValue) ? rawValue : [];
-    },
-    set(value) {
-      // التأكد من أن القيمة المُخزنة هي array صحيح
-      if (Array.isArray(value)) {
-        this.setDataValue('serviceHistory', value);
-      } else {
-        this.setDataValue('serviceHistory', []);
-      }
     }
   },
   createdAt: {
@@ -88,51 +79,8 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
   }
 });
 
-// Hook لإضافة السجل التاريخي عند تغيير الحالة
-ServiceOrder.addHook('beforeUpdate', (serviceOrder, options) => {
-  if (serviceOrder.changed('status')) {
-    // الحصول على التاريخ الحالي بطريقة صحيحة
-    let currentHistory = serviceOrder.getDataValue('serviceHistory') || [];
-    
-    // التأكد من أن currentHistory هو array صحيح
-    if (typeof currentHistory === 'string') {
-      try {
-        currentHistory = JSON.parse(currentHistory);
-      } catch (e) {
-        currentHistory = [];
-      }
-    }
-    
-    if (!Array.isArray(currentHistory)) {
-      currentHistory = [];
-    }
-    
-    const newHistoryEntry = {
-      status: serviceOrder.status,
-      date: new Date().toISOString()
-    };
-    
-    // إضافة السجل الجديد
-    const updatedHistory = [...currentHistory, newHistoryEntry];
-    serviceOrder.setDataValue('serviceHistory', updatedHistory);
-  }
-});
-
-// Hook لإضافة الحالة الأولى عند الإنشاء
-ServiceOrder.addHook('afterCreate', async (serviceOrder, options) => {
-  const initialHistory = [{
-    status: serviceOrder.status,
-    date: serviceOrder.createdAt.toISOString()
-  }];
-  
-  // استخدام update مع تجنب تشغيل hooks
-  await serviceOrder.update({ 
-    serviceHistory: initialHistory 
-  }, { 
-    hooks: false,
-    silent: true
-  });
-});
+// تم حذف جميع الـ hooks لتجنب التكرار
+// سيتم التحكم في serviceHistory يدوياً في الـ controller
 
 // تعريف العلاقات
 ServiceOrder.belongsTo(User, { foreignKey: 'userId', as: 'user' });

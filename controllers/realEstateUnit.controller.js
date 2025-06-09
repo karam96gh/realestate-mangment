@@ -163,12 +163,12 @@ const getUnitById = catchAsync(async (req, res, next) => {
 const createUnit = catchAsync(async (req, res, next) => {
   const { 
     buildingId, 
+    ownerId,
     unitNumber, 
     unitType,
     unitLayout,
     floor, 
     area, 
-    // bedrooms field removed
     bathrooms, 
     price, 
     status, 
@@ -188,23 +188,68 @@ const createUnit = catchAsync(async (req, res, next) => {
     }
   }
   
+  // Validate owner if provided
+  let validatedOwnerId = null;
+  if (ownerId) {
+    const owner = await User.findByPk(ownerId);
+    if (!owner) {
+      return next(new AppError('المالك المحدد غير موجود', 404));
+    }
+    
+    // Optional: Add role validation for owner
+    // if (owner.role !== 'tenant' && owner.role !== 'owner') {
+    //   return next(new AppError('المستخدم المحدد لا يمكن أن يكون مالكاً للوحدة', 400));
+    // }
+    
+    validatedOwnerId = ownerId;
+  }
+  
+  // Check for duplicate unit number in the same building
+  const existingUnit = await RealEstateUnit.findOne({
+    where: {
+      buildingId,
+      unitNumber
+    }
+  });
+  
+  if (existingUnit) {
+    return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
+  }
+  
   const newUnit = await RealEstateUnit.create({
     buildingId,
+    ownerId: validatedOwnerId,
     unitNumber,
     unitType,
     unitLayout,
     floor,
     area,
-    // bedrooms removed
     bathrooms,
     price,
     status: status || 'available',
     description
   });
   
+  // Fetch the created unit with owner and building information
+  const unitWithDetails = await RealEstateUnit.findByPk(newUnit.id, {
+    include: [
+      {
+        model: Building,
+        as: 'building',
+        attributes: ['id', 'name', 'address']
+      },
+      {
+        model: User,
+        as: 'owner',
+        attributes: ['id', 'fullName', 'email', 'phone'],
+        required: false
+      }
+    ]
+  });
+  
   res.status(201).json({
     status: 'success',
-    data: newUnit
+    data: unitWithDetails
   });
 });
 
@@ -228,12 +273,13 @@ const updateUnit = catchAsync(async (req, res, next) => {
   }
   
   const { 
+    buildingId,
+    ownerId,
     unitNumber, 
     unitType,
     unitLayout,
     floor, 
     area, 
-    // bedrooms removed
     bathrooms, 
     price, 
     status, 
@@ -241,8 +287,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
   } = req.body;
   
   // If buildingId is being updated, check if the new building exists
-  if (req.body.buildingId) {
-    const building = await Building.findByPk(req.body.buildingId);
+  if (buildingId && buildingId !== unit.buildingId) {
+    const building = await Building.findByPk(buildingId);
     if (!building) {
       return next(new AppError('المبنى غير موجود', 404));
     }
@@ -253,24 +299,71 @@ const updateUnit = catchAsync(async (req, res, next) => {
     }
   }
   
+  // Validate owner if being changed
+  let validatedOwnerId = unit.ownerId; // Keep current owner by default
+  if (ownerId !== undefined) { // Allow setting to null or changing owner
+    if (ownerId === null || ownerId === '') {
+      validatedOwnerId = null; // Remove owner
+    } else {
+      const owner = await User.findByPk(ownerId);
+      if (!owner) {
+        return next(new AppError('المالك المحدد غير موجود', 404));
+      }
+      validatedOwnerId = ownerId;
+    }
+  }
+  
+  // Check for duplicate unit number if being changed
+  if (unitNumber && unitNumber !== unit.unitNumber) {
+    const targetBuildingId = buildingId || unit.buildingId;
+    const existingUnit = await RealEstateUnit.findOne({
+      where: {
+        buildingId: targetBuildingId,
+        unitNumber,
+        id: { [Op.ne]: req.params.id } // Exclude current unit
+      }
+    });
+    
+    if (existingUnit) {
+      return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
+    }
+  }
+  
   // Update unit
   await unit.update({
-    buildingId: req.body.buildingId || unit.buildingId,
+    buildingId: buildingId || unit.buildingId,
+    ownerId: validatedOwnerId,
     unitNumber: unitNumber || unit.unitNumber,
     unitType: unitType || unit.unitType,
     unitLayout: unitLayout !== undefined ? unitLayout : unit.unitLayout,
     floor: floor !== undefined ? floor : unit.floor,
     area: area !== undefined ? area : unit.area,
-    // bedrooms removed
     bathrooms: bathrooms !== undefined ? bathrooms : unit.bathrooms,
     price: price !== undefined ? price : unit.price,
     status: status || unit.status,
-    description: description || unit.description
+    description: description !== undefined ? description : unit.description
+  });
+  
+  // Fetch the updated unit with owner and building details
+  const updatedUnit = await RealEstateUnit.findByPk(req.params.id, {
+    include: [
+      {
+        model: Building,
+        as: 'building',
+        attributes: ['id', 'name', 'address']
+      },
+      {
+        model: User,
+        as: 'owner',
+        attributes: ['id', 'fullName', 'email', 'phone'],
+        required: false
+      }
+    ]
   });
   
   res.status(200).json({
     status: 'success',
-    data: unit
+    data: updatedUnit
   });
 });
 

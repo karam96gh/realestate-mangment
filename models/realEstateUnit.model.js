@@ -2,6 +2,7 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const Building = require('./building.model');
+const User = require('./user.model');
 
 const RealEstateUnit = sequelize.define('RealEstateUnit', {
   id: {
@@ -17,6 +18,15 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
       key: 'id'
     }
   },
+  ownerId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: User,
+      key: 'id'
+    },
+    comment: 'معرف مالك الوحدة'
+  },
   unitNumber: {
     type: DataTypes.STRING(20),
     allowNull: false
@@ -31,7 +41,6 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
     allowNull: true,
     comment: 'تخطيط الوحدة (عدد الغرف والمطابخ والحمامات)'
   },
-  // MODIFIED: Changed from INTEGER to STRING
   floor: {
     type: DataTypes.STRING(20),
     comment: 'الطابق - يمكن أن يحتوي على قيم مثل "الأرضي"، "الميزانين"، إلخ'
@@ -39,7 +48,6 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
   area: {
     type: DataTypes.DECIMAL(10, 2)
   },
-  // REMOVED: bedrooms field is no longer here
   bathrooms: {
     type: DataTypes.INTEGER
   },
@@ -64,8 +72,11 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
   }
 });
 
-// Define association
+// Define associations
 RealEstateUnit.belongsTo(Building, { foreignKey: 'buildingId', as: 'building' });
 Building.hasMany(RealEstateUnit, { foreignKey: 'buildingId', as: 'units' });
+
+RealEstateUnit.belongsTo(User, { foreignKey: 'ownerId', as: 'owner' });
+User.hasMany(RealEstateUnit, { foreignKey: 'ownerId', as: 'ownedUnits' });
 
 module.exports = RealEstateUnit;

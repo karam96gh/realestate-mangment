@@ -67,8 +67,11 @@ const createUserWhereCondition = async (currentUser) => {
     
     // إنشاء شرط البحث
     const conditions = [
-      { role: 'admin' },
-      { role: 'manager', companyId: currentUser.companyId }
+            { role: 'accountant', companyId: currentUser.companyId },
+                  { role: 'maintenance', companyId: currentUser.companyId },
+      { role: 'owner', companyId: currentUser.companyId },
+
+
     ];
     
     // إضافة المستأجرين إذا وجدوا

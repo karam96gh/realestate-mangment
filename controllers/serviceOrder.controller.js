@@ -34,7 +34,6 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     const buildingIds = companyBuildings.map(building => building.id);
     
     if (buildingIds.length === 0) {
-      // إذا لم تكن هناك مباني، ارجع قائمة فارغة
       return res.status(200).json({
         status: 'success',
         results: 0,
@@ -49,7 +48,6 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     }).then(units => units.map(unit => unit.id));
     
     if (unitIds.length === 0) {
-      // إذا لم تكن هناك وحدات، ارجع قائمة فارغة
       return res.status(200).json({
         status: 'success',
         results: 0,
@@ -64,7 +62,6 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     }).then(reservations => reservations.map(reservation => reservation.id));
     
     if (reservationIds.length === 0) {
-      // إذا لم تكن هناك حجوزات، ارجع قائمة فارغة
       return res.status(200).json({
         status: 'success',
         results: 0,
@@ -146,8 +143,6 @@ const getServiceOrderById = catchAsync(async (req, res, next) => {
     data: serviceOrder
   });
 });
-// Get service order by ID
-
 
 // Create new service order
 const createServiceOrder = catchAsync(async (req, res, next) => {
@@ -180,9 +175,9 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
     attachmentFile = req.file.filename;
   }
   
-  // Create service order
+  // Create service order - الـ hook سيتولى إضافة السجل التاريخي الأولي
   const newServiceOrder = await ServiceOrder.create({
-    userId: req.user.id, // Always use the current user's ID
+    userId: req.user.id,
     reservationId,
     serviceType,
     serviceSubtype,
@@ -191,9 +186,12 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
     status: 'pending'
   });
   
+  // إعادة جلب السجل مع السجل التاريخي المحدث
+  const serviceOrderWithHistory = await ServiceOrder.findByPk(newServiceOrder.id);
+  
   res.status(201).json({
     status: 'success',
-    data: newServiceOrder
+    data: serviceOrderWithHistory
   });
 });
 
@@ -220,6 +218,14 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     }
   }
   
+  // تحقق من صحة الحالة الجديدة إذا تم تمريرها
+  if (req.body.status) {
+    const validStatuses = ['pending', 'in-progress', 'completed', 'rejected'];
+    if (!validStatuses.includes(req.body.status)) {
+      return next(new AppError('Invalid status value', 400));
+    }
+  }
+  
   const { serviceType, serviceSubtype, description, status } = req.body;
   
   // Handle attachment upload if provided
@@ -235,7 +241,7 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     attachmentFile = req.file.filename;
   }
   
-  // Update service order
+  // Update service order - الـ hook سيتولى إضافة السجل التاريخي عند تغيير الحالة
   await serviceOrder.update({
     serviceType: serviceType || serviceOrder.serviceType,
     serviceSubtype: serviceSubtype || serviceOrder.serviceSubtype,
@@ -244,9 +250,29 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     status: status || serviceOrder.status
   });
   
+  // إعادة جلب السجل مع السجل التاريخي المحدث
+  const updatedServiceOrder = await ServiceOrder.findByPk(serviceOrder.id, {
+    include: [
+      { model: User, as: 'user', attributes: { exclude: ['password'] } },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          include: [{
+            model: Building,
+            as: 'building',
+            include: [{ model: Company, as: 'company' }]
+          }]
+        }]
+      }
+    ]
+  });
+  
   res.status(200).json({
     status: 'success',
-    data: serviceOrder
+    data: updatedServiceOrder
   });
 });
 
@@ -315,11 +341,34 @@ const getServiceOrdersByReservationId = catchAsync(async (req, res, next) => {
   });
 });
 
+// دالة إضافية للحصول على تاريخ الحالات لطلب خدمة معين
+const getServiceOrderHistory = catchAsync(async (req, res, next) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  
+  if (!serviceOrder) {
+    return next(new AppError('Service order not found', 404));
+  }
+  
+  // تحقق من صلاحيات الوصول
+  if (req.user.role === 'tenant' && serviceOrder.userId !== req.user.id) {
+    return next(new AppError('You can only view history for your own service orders', 403));
+  }
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      serviceOrderId: serviceOrder.id,
+      serviceHistory: serviceOrder.serviceHistory
+    }
+  });
+});
+
 module.exports = {
   getAllServiceOrders,
   getServiceOrderById,
   createServiceOrder,
   updateServiceOrder,
   deleteServiceOrder,
-  getServiceOrdersByReservationId
+  getServiceOrdersByReservationId,
+  getServiceOrderHistory
 };

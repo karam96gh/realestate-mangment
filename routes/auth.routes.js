@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdmin } = require('../middleware/role.middleware');
+const { isAdmin,isAdminOrManager } = require('../middleware/role.middleware');
 const { validate, loginValidationRules, userValidationRules,resetManagerPasswordvalidate } = require('../middleware/validation.middleware');
 // routes/auth.routes.js
 
@@ -38,6 +38,35 @@ router.post(
   userValidationRules,
   validate,
   authController.registerManager
+);
+// Accountant routes (protected)
+router.post(
+  '/accountant/register',
+  authMiddleware,
+  isAdminOrManager,
+  userValidationRules,
+  validate,
+  authController.registerAccountant
+);
+
+// Maintenance routes (protected)
+router.post(
+  '/maintenance/register',
+  authMiddleware,
+  isAdminOrManager,
+  userValidationRules,
+  validate,
+  authController.registerMaintenance
+);
+
+// Owner routes (protected)
+router.post(
+  '/owner/register',
+  authMiddleware,
+  isAdminOrManager,
+  userValidationRules,
+  validate,
+  authController.registerOwner
 );
 
 // Protected routes

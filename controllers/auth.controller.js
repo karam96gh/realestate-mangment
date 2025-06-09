@@ -141,7 +141,117 @@ const registerManager = catchAsync(async (req, res, next) => {
     }
   });
 });
-
+const registerMaintenance = async (req, res) => {
+  try {
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
+    
+    // التحقق من أن companyId مقدم وصالح
+    if (!companyId) {
+      return res.status(400).json({ message: 'معرف الشركة مطلوب' });
+    }
+    
+    // التحقق من وجود الشركة
+    const company = await Company.findByPk(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'الشركة غير موجودة' });
+    }
+    
+    // التأكد من أن المدير ينتمي إلى نفس الشركة (إذا كان الطلب من مدير)
+    if (req.user.role === 'manager' && req.user.companyId !== companyId) {
+      return res.status(403).json({ message: 'غير مصرح لك بإنشاء عامل صيانة لهذه الشركة' });
+    }
+    
+    const user = await User.create({
+      username,
+      password,
+      fullName,
+      email,
+      phone,
+      whatsappNumber,
+      idNumber,
+      role: 'maintenance',
+      companyId
+    });
+    
+    return res.status(201).json({ message: 'تم إنشاء عامل الصيانة بنجاح', user: user.toJSON() });
+  } catch (error) {
+    return res.status(500).json({ message: 'خطأ في إنشاء عامل الصيانة', error: error.message });
+  }
+};
+const registerAccountant = async (req, res) => {
+  try {
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
+    
+    // التحقق من أن companyId مقدم وصالح
+    if (!companyId) {
+      return res.status(400).json({ message: 'معرف الشركة مطلوب' });
+    }
+    
+    // التحقق من وجود الشركة
+    const company = await Company.findByPk(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'الشركة غير موجودة' });
+    }
+    
+    // التأكد من أن المدير أو المسؤول ينتمي إلى نفس الشركة (إذا كان الطلب من مدير)
+    if (req.user.role === 'manager' && req.user.companyId !== companyId) {
+      return res.status(403).json({ message: 'غير مصرح لك بإنشاء محاسب لهذه الشركة' });
+    }
+    
+    const user = await User.create({
+      username,
+      password,
+      fullName,
+      email,
+      phone,
+      whatsappNumber,
+      idNumber,
+      role: 'accountant',
+      companyId
+    });
+    
+    return res.status(201).json({ message: 'تم إنشاء المحاسب بنجاح', user: user.toJSON() });
+  } catch (error) {
+    return res.status(500).json({ message: 'خطأ في إنشاء المحاسب', error: error.message });
+  }
+};
+const registerOwner = async (req, res) => {
+  try {
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
+    
+    // التحقق من أن companyId مقدم وصالح
+    if (!companyId) {
+      return res.status(400).json({ message: 'معرف الشركة مطلوب' });
+    }
+    
+    // التحقق من وجود الشركة
+    const company = await Company.findByPk(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'الشركة غير موجودة' });
+    }
+    
+    // التأكد من أن المدير ينتمي إلى نفس الشركة (إذا كان الطلب من مدير)
+    if (req.user.role === 'manager' && req.user.companyId !== companyId) {
+      return res.status(403).json({ message: 'غير مصرح لك بإنشاء مالك عقار لهذه الشركة' });
+    }
+    
+    const user = await User.create({
+      username,
+      password,
+      fullName,
+      email,
+      phone,
+      whatsappNumber,
+      idNumber,
+      role: 'owner',
+      companyId
+    });
+    
+    return res.status(201).json({ message: 'تم إنشاء مالك العقار بنجاح', user: user.toJSON() });
+  } catch (error) {
+    return res.status(500).json({ message: 'خطأ في إنشاء مالك العقار', error: error.message });
+  }
+};
 // Change password
 const changePassword = catchAsync(async (req, res, next) => {
   const { currentPassword, newPassword } = req.body;
@@ -186,5 +296,8 @@ module.exports = {
   registerManager,
   changePassword,
   getMe,
-  resetManagerPassword
+  resetManagerPassword,
+  registerAccountant,
+  registerMaintenance,
+  registerOwner
 };

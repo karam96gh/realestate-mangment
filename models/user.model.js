@@ -77,7 +77,7 @@ const User = sequelize.define('User', {
   },
   // دور المستخدم
   role: {
-    type: DataTypes.ENUM('admin', 'manager', 'tenant'),
+    type: DataTypes.ENUM('admin', 'manager', 'tenant','accountant', 'maintenance', 'owner'),
     defaultValue: 'tenant'
   },
   // معرف الشركة (للمديرين فقط)

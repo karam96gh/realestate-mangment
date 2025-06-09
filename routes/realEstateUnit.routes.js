@@ -3,13 +3,13 @@ const express = require('express');
 const router = express.Router();
 const realEstateUnitController = require('../controllers/realEstateUnit.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdminOrManager, isAdminOrManagerOrOwner } = require('../middleware/role.middleware');
 const { validate, unitValidationRules } = require('../middleware/validation.middleware');
 // Protected routes
 router.use(authMiddleware);
 router.get('/:id', realEstateUnitController.getUnitById);
 
-router.use(isAdminOrManager);
+router.use(isAdminOrManagerOrOwner);
 // Public routes
 router.get('/', realEstateUnitController.getAllUnits);
 router.get('/unit-building/available', realEstateUnitController.getAvailableUnits);

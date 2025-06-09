@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdmin } = require('../middleware/role.middleware');
+const { isAdmin, isAdminOrManager } = require('../middleware/role.middleware');
 const { validate, userValidationRules } = require('../middleware/validation.middleware');
 const multer = require('multer');
 
@@ -11,7 +11,7 @@ const multer = require('multer');
 router.use(authMiddleware);
 
 // Get all users (admin only)
-router.get('/', isAdmin, userController.getAllUsers);
+router.get('/', isAdminOrManager, userController.getAllUsers);
 
 // Get user by ID
 router.get('/:id', userController.getUserById);

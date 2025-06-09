@@ -6,18 +6,37 @@ const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 
 // Get all users (admin only)
-const getAllUsers = catchAsync(async (req, res) => {
-  const users = await User.findAll({
-    attributes: { exclude: ['password'] }
-  });
-  
-  res.status(200).json({
-    status: 'success',
-    results: users.length,
-    data: users
-  });
-});
+const { createUserWhereCondition } = require('../utils/userHelpers');
 
+const getAllUsers = catchAsync(async (req, res, next) => {
+  try {
+    // إنشاء شرط البحث حسب دور المستخدم
+    const whereCondition = await createUserWhereCondition(req.user);
+    
+    // جلب المستخدمين مع تضمين معلومات الشركة
+    const users = await User.findAll({
+      where: whereCondition,
+      attributes: { exclude: ['password'] },
+      include: [
+        {
+          model: Company,
+          as: 'company',
+          attributes: ['id', 'name', 'email', 'phone'],
+          required: false
+        }
+      ],
+      order: [['role', 'ASC'], ['name', 'ASC']]
+    });
+    
+    res.status(200).json({
+      status: 'success',
+      results: users.length,
+      data: users
+    });
+  } catch (error) {
+    return next(new AppError(error.message, 403));
+  }
+});
 // Get user by ID
 // controllers/user.controller.js
 

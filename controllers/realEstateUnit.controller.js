@@ -24,7 +24,11 @@ const getAllUnits = catchAsync(async (req, res, next) => {
       include: [
         { model: Company, as: 'company' }
       ]
-    }
+    },
+    {
+        model: RealEstateUnit,
+        as: 'units',
+      }
   ];
   
   if (req.user.role === 'manager') {
@@ -38,7 +42,7 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
-    includeOptions[0].where = { ownerId: req.user.id };
+    includeOptions[1].where = { ownerId: req.user.id };
   }
   
   const units = await RealEstateUnit.findAll({

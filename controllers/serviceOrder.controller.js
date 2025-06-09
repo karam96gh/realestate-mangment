@@ -20,7 +20,7 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
   let whereCondition = {};
   
   // نهج مختلف للتصفية: سنحصل أولاً على قائمة معرفات الحجوزات المسموح بها
-  if (req.user.role === 'manager') {
+  if (req.user.role === 'manager'||req.user.role === 'maintenance') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
@@ -131,7 +131,7 @@ const getServiceOrderById = catchAsync(async (req, res, next) => {
   }
   
   // تحقق إذا كان المستخدم مديرًا، فيمكنه فقط رؤية طلبات الخدمة لشركته
-  if (req.user.role === 'manager') {
+  if (req.user.role === 'manager'||req.user.role === 'maintenance') {
     const companyId = serviceOrder.reservation.unit.building.companyId;
     if (!req.user.companyId || req.user.companyId !== companyId) {
       return next(new AppError('غير مصرح لك بعرض طلب الخدمة هذا', 403));

@@ -28,6 +28,6 @@ router.put(
 );
 
 // Delete user (admin only)
-router.delete('/:id', isAdmin, userController.deleteUser);
+router.delete('/:id', isAdminOrManager, userController.deleteUser);
 
 module.exports = router;

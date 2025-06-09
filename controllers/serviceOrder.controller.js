@@ -175,7 +175,7 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
     attachmentFile = req.file.filename;
   }
   
-  // Create service order - الـ hook سيتولى إضافة السجل التاريخي الأولي
+  // Create service order مع السجل التاريخي الأولي
   const newServiceOrder = await ServiceOrder.create({
     userId: req.user.id,
     reservationId,
@@ -183,15 +183,16 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
     serviceSubtype,
     description,
     attachmentFile,
-    status: 'pending'
+    status: 'pending',
+    serviceHistory: [{
+      status: 'pending',
+      date: new Date().toISOString()
+    }]
   });
-  
-  // إعادة جلب السجل مع السجل التاريخي المحدث
-  const serviceOrderWithHistory = await ServiceOrder.findByPk(newServiceOrder.id);
   
   res.status(201).json({
     status: 'success',
-    data: serviceOrderWithHistory
+    data: newServiceOrder
   });
 });
 
@@ -241,13 +242,36 @@ const updateServiceOrder = catchAsync(async (req, res, next) => {
     attachmentFile = req.file.filename;
   }
   
-  // Update service order - الـ hook سيتولى إضافة السجل التاريخي عند تغيير الحالة
+  // تحديث السجل التاريخي يدوياً إذا تغيرت الحالة
+  let updatedHistory = serviceOrder.serviceHistory || [];
+  if (status && status !== serviceOrder.status) {
+    // التأكد من أن التاريخ الحالي هو array صحيح
+    if (typeof updatedHistory === 'string') {
+      try {
+        updatedHistory = JSON.parse(updatedHistory);
+      } catch (e) {
+        updatedHistory = [];
+      }
+    }
+    
+    if (!Array.isArray(updatedHistory)) {
+      updatedHistory = [];
+    }
+    
+    updatedHistory.push({
+      status: status,
+      date: new Date().toISOString()
+    });
+  }
+  
+  // Update service order
   await serviceOrder.update({
     serviceType: serviceType || serviceOrder.serviceType,
     serviceSubtype: serviceSubtype || serviceOrder.serviceSubtype,
     description: description || serviceOrder.description,
     attachmentFile,
-    status: status || serviceOrder.status
+    status: status || serviceOrder.status,
+    serviceHistory: updatedHistory
   });
   
   // إعادة جلب السجل مع السجل التاريخي المحدث

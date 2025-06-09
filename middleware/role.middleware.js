@@ -124,6 +124,22 @@ const isManagerOrAccountant = (req, res, next) => {
   
   next();
 };
+const isAdminOrManagerOrAccountant = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized access' });
+  }
+  
+  if (!['manager', 'accountant','admin'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Access forbidden. Insufficient permissions' });
+  }
+  
+  // التأكد من أن المستخدم لديه companyId
+  if (!req.user.companyId) {
+    return res.status(403).json({ message: 'Access forbidden. User must be associated with a company' });
+  }
+  
+  next();
+};
 
 // وسيط للتحقق من دور عامل الصيانة مع التأكد من انتمائه للشركة
 const isMaintenance = (req, res, next) => {
@@ -210,5 +226,6 @@ module.exports = {
   isAdminOrManagerOrOwner,
   isTenantOwner,
   checkRole,
-  isTenantOrManagerWithAccess
+  isTenantOrManagerWithAccess,
+  isAdminOrManagerOrAccountant
 };

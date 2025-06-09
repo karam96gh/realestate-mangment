@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const paymentHistoryController = require('../controllers/paymentHistory.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdminOrManager,isAdminOrManagerOrAccountant } = require('../middleware/role.middleware');
 const { validate, paymentValidationRules } = require('../middleware/validation.middleware');
 const uploadMiddleware = require('../middleware/upload.middleware');
 
@@ -11,7 +11,7 @@ const uploadMiddleware = require('../middleware/upload.middleware');
 router.use(authMiddleware);
 
 // Admin/Manager routes
-router.get('/', isAdminOrManager, paymentHistoryController.getAllPayments);
+router.get('/', isAdminOrManagerOrAccountant, paymentHistoryController.getAllPayments);
 
 // Get payment by ID - accessible to admin/manager and the tenant related to the payment
 router.get('/:id', paymentHistoryController.getPaymentById);
@@ -29,7 +29,7 @@ router.post(
 // Update payment (with check image upload) - admin/manager only
 router.put(
   '/:id',
-  isAdminOrManager,
+  isAdminOrManagerOrAccountant,
   uploadMiddleware.checkImage,
   validate,
   paymentHistoryController.updatePayment

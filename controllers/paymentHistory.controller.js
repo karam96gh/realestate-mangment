@@ -40,7 +40,7 @@ const getAllPayments = catchAsync(async (req, res, next) => {
   let whereCondition = {};
   
   // إذا كان المستخدم مديرًا، فقط إظهار دفعات شركته
-  if (req.user.role === 'manager') {
+  if (req.user.role === 'manager'||req.user.role === 'accountant') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }

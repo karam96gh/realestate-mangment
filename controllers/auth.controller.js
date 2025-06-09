@@ -143,8 +143,8 @@ const registerManager = catchAsync(async (req, res, next) => {
 });
 const registerMaintenance = async (req, res) => {
   try {
-    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
-    
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber } = req.body;
+    const companyId=req.user.companyId;
     // التحقق من أن companyId مقدم وصالح
     if (!companyId) {
       return res.status(400).json({ message: 'معرف الشركة مطلوب' });
@@ -180,8 +180,8 @@ const registerMaintenance = async (req, res) => {
 };
 const registerAccountant = async (req, res) => {
   try {
-    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
-    
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber } = req.body;
+    const companyId=req.user.companyId;    
     // التحقق من أن companyId مقدم وصالح
     if (!companyId) {
       return res.status(400).json({ message: 'معرف الشركة مطلوب' });
@@ -217,8 +217,8 @@ const registerAccountant = async (req, res) => {
 };
 const registerOwner = async (req, res) => {
   try {
-    const { username, password, fullName, email, phone, whatsappNumber, idNumber, companyId } = req.body;
-    
+    const { username, password, fullName, email, phone, whatsappNumber, idNumber } = req.body;
+    const companyId=req.user.companyId;    
     // التحقق من أن companyId مقدم وصالح
     if (!companyId) {
       return res.status(400).json({ message: 'معرف الشركة مطلوب' });

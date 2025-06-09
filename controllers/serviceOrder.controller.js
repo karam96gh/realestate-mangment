@@ -312,7 +312,10 @@ const deleteServiceOrder = catchAsync(async (req, res, next) => {
       return next(new AppError('You can only delete pending service orders', 403));
     }
   }
-  
+    if (req.user.role !== 'tenant') {
+      return next(new AppError('You can only delete your own service orders', 403));
+   
+  }
   // Delete attachment if it exists
   if (serviceOrder.attachmentFile) {
     const attachmentPath = path.join(UPLOAD_PATHS.attachments, serviceOrder.attachmentFile);

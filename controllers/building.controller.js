@@ -7,31 +7,89 @@ const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
 // Get all buildings
-const getAllBuildings = catchAsync(async (req, res) => {
-  // إذا كان المستخدم مديرًا، فقط إظهار البنايات من شركته
-  const whereCondition = {};
+const getAllBuildings = catchAsync(async (req, res, next) => {
+  let whereCondition = {};
+  let includeConditions = [
+    { model: Company, as: 'company' }
+  ];
   
-  if (req.user.role === 'manager') {
+  if (req.user.role === 'admin') {
+    // Admin يمكنه رؤية جميع البنايات
+    // لا توجد قيود
+  } 
+  else if (req.user.role === 'manager') {
+    // المدير يرى فقط بنايات شركته
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
     whereCondition.companyId = req.user.companyId;
-  } else if (req.user.role === 'tenant') {
-    // المستأجرون لا يمكنهم رؤية كل البنايات
-    return next(new AppError('غير مصرح لك بعرض جميع البنايات', 403));
+  } 
+  else if (req.user.role === 'owner') {
+    // تحديد نوع المستأجر: مستأجر عادي أم مالك
+    // الحصول على الوحدات المملوكة للمستخدم
+    const ownedUnits = await RealEstateUnit.findAll({
+      where: { ownerId: req.user.id },
+      attributes: ['buildingId'],
+      group: ['buildingId']
+    });
+    
+    if (ownedUnits.length > 0) {
+      // المستخدم مالك - إظهار البنايات التي يملك فيها وحدات
+      const buildingIds = ownedUnits.map(unit => unit.buildingId);
+      whereCondition.id = { [Op.in]: buildingIds };
+      
+      // إضافة معلومات الوحدات المملوكة في كل بناية
+      includeConditions.push({
+        model: RealEstateUnit,
+        as: 'units',
+        where: { ownerId: req.user.id },
+        attributes: ['id', 'unitNumber', 'unitType', 'price', 'status'],
+        required: false
+      });
+    }
+  }
+  else {
+    // دور غير معروف
+    return next(new AppError('دور المستخدم غير صحيح', 403));
   }
   
   const buildings = await Building.findAll({
     where: whereCondition,
-    include: [
-      { model: Company, as: 'company' }
-    ]
+    include: includeConditions,
+    order: [['name', 'ASC']]
   });
+  
+  // إضافة معلومات إضافية للاستجابة
+  let responseData = buildings;
+  let additionalInfo = {};
+  
+  if (req.user.role === 'owner') {
+    // إضافة إحصائيات للمستأجر/المالك
+    const ownedUnitsCount = await RealEstateUnit.count({
+      where: { ownerId: req.user.id }
+    });
+    
+    const activeReservationsCount = await Reservation.count({
+      where: { 
+        userId: req.user.id,
+        status: { [Op.in]: ['active', 'pending'] }
+      }
+    });
+    
+    additionalInfo = {
+      userStats: {
+        ownedUnitsCount,
+        activeReservationsCount,
+        userType: ownedUnitsCount > 0 ? 'owner' : 'tenant'
+      }
+    };
+  }
   
   res.status(200).json({
     status: 'success',
     results: buildings.length,
-    data: buildings
+    data: responseData,
+    ...additionalInfo
   });
 });
 

@@ -28,6 +28,9 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     {
         model: RealEstateUnit,
         as: 'units',
+       include: [
+        { model: Company, as: 'company' }
+      ]
       }
   ];
   

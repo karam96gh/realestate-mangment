@@ -3,12 +3,12 @@ const express = require('express');
 const router = express.Router();
 const buildingController = require('../controllers/building.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdminOrManager, isAdminOrManagerOrOwner } = require('../middleware/role.middleware');
 const { validate, buildingValidationRules } = require('../middleware/validation.middleware');
 
 // Public routes
 router.use(authMiddleware);
-router.use(isAdminOrManager);
+router.use(isAdminOrManagerOrOwner);
 
 router.get('/', buildingController.getAllBuildings);
 router.get('/:id', buildingController.getBuildingById);

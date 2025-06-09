@@ -129,7 +129,7 @@ const updateUser = catchAsync(async (req, res, next) => {
 // Delete user
 const deleteUser = catchAsync(async (req, res, next) => {
   // Only admin can delete users
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin'||req.user.role !== 'manager') {
     return next(new AppError('You are not authorized to delete users', 403));
   }
   

@@ -1,5 +1,7 @@
 // Auth controller 
 const User = require('../models/user.model');
+const Company = require('../models/company.model');
+
 const { generateToken } = require('../config/auth');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 // controllers/auth.controller.js

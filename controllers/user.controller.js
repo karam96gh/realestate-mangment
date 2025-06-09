@@ -21,11 +21,9 @@ const getAllUsers = catchAsync(async (req, res, next) => {
         {
           model: Company,
           as: 'company',
-          attributes: ['id', 'name', 'email', 'phone'],
           required: false
         }
       ],
-      order: [['role', 'ASC'], ['name', 'ASC']]
     });
     
     res.status(200).json({

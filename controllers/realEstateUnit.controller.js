@@ -34,6 +34,13 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     includeOptions[0].where = { companyId: req.user.companyId };
   }
   
+  if (req.user.role === 'owner') {
+    if (!req.user.companyId) {
+      return next(new AppError('المدير غير مرتبط بأي شركة', 403));
+    }
+    includeOptions[0].where = { ownerId: req.user.id };
+  }
+  
   const units = await RealEstateUnit.findAll({
     where: whereCondition,
     include: includeOptions

@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const reservationController = require('../controllers/reservation.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdminOrManager, isAdminOrManagerOrAccountant } = require('../middleware/role.middleware');
 const { validate, reservationValidationRules, validateReservationContext } = require('../middleware/validation.middleware');
 const multer = require('multer');
 const path = require('path');
@@ -122,7 +122,7 @@ router.use(authMiddleware);
 router.get('/my', reservationController.getMyReservations);
 
 // مسارات المسؤولين والمديرين
-router.get('/', isAdminOrManager, reservationController.getAllReservations);
+router.get('/', isAdminOrManagerOrAccountant, reservationController.getAllReservations);
 
 // الحصول على حجز حسب المعرف
 router.get('/:id', reservationController.getReservationById);

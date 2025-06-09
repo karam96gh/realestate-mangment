@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const tenantController = require('../controllers/tenant.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdmin, isAdminOrManager } = require('../middleware/role.middleware');
+const { isAdmin, isAdminOrManager, isAdminOrManagerOrAccountant } = require('../middleware/role.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const multer = require('multer');
 const path = require('path');
@@ -48,7 +48,7 @@ const upload = multer({
 router.use(authMiddleware);
 
 // الحصول على جميع المستأجرين (فقط للمسؤولين والمديرين)
-router.get('/', isAdminOrManager, tenantController.getAllTenants);
+router.get('/', isAdminOrManagerOrAccountant, tenantController.getAllTenants);
 
 // الحصول على معلومات المستأجر الحالي
 router.get('/my-info', tenantController.getTenantByUserId);

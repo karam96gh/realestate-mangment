@@ -84,7 +84,7 @@ const getAllReservations = catchAsync(async (req, res, next) => {
   ];
   
   // إذا كان المستخدم مديرًا، يُظهر فقط حجوزات شركته
-  if (req.user.role === 'manager') {
+  if (req.user.role === 'manager'||req.user.role==='accountant') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }

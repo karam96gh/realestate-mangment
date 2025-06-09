@@ -241,7 +241,11 @@ const updatePayment = catchAsync(async (req, res, next) => {
     }
     checkImage = req.file.filename;
   }
-  
+  if(req.user.role === 'accountant' && payment.status==='cancelled')
+  {
+          return next(new AppError('غير مصرح لك بإالغاء هذه الدفعة', 403));
+
+  }
   // تحديث الدفعة
   await payment.update({
     amount: amount || payment.amount,

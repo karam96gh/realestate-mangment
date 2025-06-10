@@ -17,6 +17,7 @@ const paymentHistoryRoutes = require('./routes/paymentHistory.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const tenantRoutes = require('./routes/tenant.routes');
 
+const expenseRoutes = require('./routes/expense.routes');
 
 
 // Import error handler

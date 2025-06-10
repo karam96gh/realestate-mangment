@@ -126,7 +126,7 @@ const reservationValidationRules = [
   check('depositPaymentMethod').optional({ nullable: true }).isIn(['cash', 'check']).withMessage('طريقة دفع التأمين يجب أن تكون نقدي أو شيك'),
   check('depositStatus').optional({ nullable: true }).isIn(['unpaid', 'paid', 'returned']).withMessage('حالة التأمين غير صالحة'),
   check('depositPaidDate').optional({ nullable: true }).isDate().withMessage('تاريخ دفع التأمين يجب أن يكون تاريخًا صالحًا'),
-  check('depositReturnedDate').optional({ nullable: true }).isDate().withMessage('تاريخ استرجاع التأمين يجب أن يكون تاريخًا صالحًا'),
+  check('depositReturnedDate').optional({ nullable: true }),
   check('depositNotes').optional({ nullable: true }),
   
   check('notes').optional({ nullable: true }),

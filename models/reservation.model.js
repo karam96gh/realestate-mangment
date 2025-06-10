@@ -133,7 +133,9 @@ const Reservation = sequelize.define('Reservation', {
   depositCheckImageUrl: {
     type: DataTypes.VIRTUAL,
     get() {
+      if(this.depositCheckImage)
       return `${process.env.BASE_URL || 'http://localhost:3000'}/uploads/checks/${this.depositCheckImage}`;
+     return null;
     }
   },
   // حالة التأمين

@@ -178,6 +178,22 @@ const isAdminOrManagerOrMaintenance = (req, res, next) => {
   
   next();
 };
+const isAdminOrManagerOrMaintenanceOrAccountant = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'عذرًا، يجب تسجيل الدخول أولاً!' });
+  }
+  
+  if (!['admin', 'manager', 'maintenance','accountant'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'عذرًا، هذه الصفحة مخصصة للمسؤولين، المديرين، أو عمال الصيانة فقط.' });
+  }
+  
+  // التأكد من أن المستخدم لديه companyId (باستثناء admin)
+  if (req.user.role !== 'admin' && !req.user.companyId) {
+    return res.status(403).json({ message: 'عذرًا، حسابك غير مرتبط بشركة.' });
+  }
+  
+  next();
+};
 
 // وسيط للتحقق من دور مالك العقار مع التأكد من انتمائه للشركة
 const isOwner = (req, res, next) => {
@@ -229,5 +245,6 @@ module.exports = {
   isTenantOwner,
   checkRole,
   isTenantOrManagerWithAccess,
-  isAdminOrManagerOrAccountant
+  isAdminOrManagerOrAccountant,
+  isAdminOrManagerOrMaintenanceOrAccountant
 };

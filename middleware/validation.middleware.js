@@ -95,7 +95,16 @@ const buildingValidationRules = [
   check('internalParkingSpaces').optional({ nullable: true }).isInt().withMessage('عدد المواقف الداخلية يجب أن يكون رقمًا صحيحًا'),
   check('description').optional({ nullable: true })
 ];
-
+const expenseValidationRules = [
+  check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
+  check('expenseType').isIn([
+    'maintenance', 'utilities', 'insurance', 'cleaning', 
+    'security', 'management', 'repairs', 'other'
+  ]).withMessage('نوع المصروف غير صالح'),
+  check('amount').isNumeric().withMessage('المبلغ يجب أن يكون رقمًا'),
+  check('expenseDate').isDate().withMessage('تاريخ المصروف مطلوب وبتنسيق صحيح'),
+  check('notes').optional({ nullable: true }).isLength({ max: 500 }).withMessage('الملاحظات يجب أن تكون أقل من 500 حرف')
+];
 
 
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
@@ -204,5 +213,6 @@ module.exports = {
   paymentValidationRules,
   loginValidationRules,
   resetManagerPasswordvalidate,
-  reservationUpdateValidationRules
+  reservationUpdateValidationRules,
+  expenseValidationRules
 };

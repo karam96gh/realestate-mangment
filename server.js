@@ -50,6 +50,8 @@ app.use('/api/dashboard', dashboardRoutes);
 // تسجيل المسارات في التطبيق
 app.use('/api/tenants', tenantRoutes);
 // Default route
+app.use('/api/expenses', expenseRoutes);
+
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to Real Estate Management API' });
 });

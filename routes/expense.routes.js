@@ -15,14 +15,14 @@ const { validate, expenseValidationRules } = require('../middleware/validation.m
 router.use(authMiddleware);
 
 // المسارات العامة (للمسؤولين والمديرين والمحاسبين والمالكين)
-router.get('/', isAdminOrManagerOrOwner, expenseController.getAllExpenses);
-router.get('/statistics', isAdminOrManagerOrOwner, expenseController.getExpenseStatistics);
+router.get('/', isAdminOrManagerOrAccountant, expenseController.getAllExpenses);
+router.get('/statistics', isAdminOrManagerOrAccountant, expenseController.getExpenseStatistics);
 
 // الحصول على مصروف حسب المعرف
-router.get('/:id', isAdminOrManagerOrOwner, expenseController.getExpenseById);
+router.get('/:id', isAdminOrManagerOrAccountant, expenseController.getExpenseById);
 
 // الحصول على مصاريف وحدة معينة
-router.get('/unit/:unitId', isAdminOrManagerOrOwner, expenseController.getExpensesByUnitId);
+router.get('/unit/:unitId', isAdminOrManagerOrAccountant, expenseController.getExpensesByUnitId);
 
 // إنشاء مصروف جديد (فقط للمسؤولين والمديرين والمحاسبين)
 router.post(

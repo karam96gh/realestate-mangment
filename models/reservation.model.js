@@ -1,4 +1,4 @@
-// models/reservation.model.js
+// models/reservation.model.js - النسخة المحدثة مع حقول التأمين
 
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
@@ -106,6 +106,8 @@ const Reservation = sequelize.define('Reservation', {
     defaultValue: 'monthly',
     comment: 'شهري، 4 دفعات، 3 دفعات، دفعتين، أو سنوي'
   },
+  
+  // ===== حقول التأمين المحدثة =====
   // هل يشمل الضمان؟
   includesDeposit: {
     type: DataTypes.BOOLEAN,
@@ -116,6 +118,50 @@ const Reservation = sequelize.define('Reservation', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true
   },
+  // طريقة دفع التأمين
+  depositPaymentMethod: {
+    type: DataTypes.ENUM('cash', 'check'),
+    allowNull: true,
+    comment: 'طريقة دفع التأمين: نقدي أو شيك'
+  },
+  // صورة شيك التأمين
+  depositCheckImage: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'صورة شيك التأمين في حالة الدفع بالشيك'
+  },
+  depositCheckImageUrl: {
+    type: DataTypes.VIRTUAL,
+    get() {
+      return this.depositCheckImage ? getFileUrl(this.depositCheckImage, 'checks') : null;
+    }
+  },
+  // حالة التأمين
+  depositStatus: {
+    type: DataTypes.ENUM('unpaid', 'paid', 'returned'),
+    allowNull: true,
+    defaultValue: 'unpaid',
+    comment: 'حالة التأمين: غير مدفوع، مدفوع، مسترجع'
+  },
+  // تاريخ دفع التأمين
+  depositPaidDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    comment: 'تاريخ دفع التأمين'
+  },
+  // تاريخ استرجاع التأمين
+  depositReturnedDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    comment: 'تاريخ استرجاع التأمين'
+  },
+  // ملاحظات التأمين
+  depositNotes: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'ملاحظات خاصة بالتأمين'
+  },
+  
   // حالة الحجز
   status: {
     type: DataTypes.ENUM('active', 'expired', 'cancelled'),

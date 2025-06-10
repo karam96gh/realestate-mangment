@@ -160,9 +160,12 @@ const getReservationById = catchAsync(async (req, res, next) => {
 
 // إنشاء حجز جديد
 // إنشاء حجز جديد مع إنشاء مستأجر جديد
+// controllers/reservation.controller.js - تحديث دوال إنشاء وتحديث الحجز لحقول التأمين
+
+// إنشاء حجز جديد مع حقول التأمين المحدثة
 const createReservation = catchAsync(async (req, res, next) => {
-  console.log("Files received:", req.files); // Debug log
-  console.log("Form data:", req.body);       // Debug log
+  console.log("Files received:", req.files);
+  console.log("Form data:", req.body);
   const transaction = await sequelize.transaction();
 
   try {
@@ -173,8 +176,16 @@ const createReservation = catchAsync(async (req, res, next) => {
       endDate,
       paymentMethod,
       paymentSchedule,
+      
+      // حقول التأمين المحدثة
       includesDeposit,
       depositAmount,
+      depositPaymentMethod,
+      depositStatus,
+      depositPaidDate,
+      depositReturnedDate,
+      depositNotes,
+      
       notes,
       // Tenant data
       tenantFullName,
@@ -210,6 +221,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     let identityImageFront = null;
     let identityImageBack = null;
     let commercialRegisterImage = null;
+    let depositCheckImage = null; // جديد
         
     if (req.files) {
       if (req.files.contractImage && req.files.contractImage.length > 0) {
@@ -236,6 +248,12 @@ const createReservation = catchAsync(async (req, res, next) => {
         commercialRegisterImage = req.files.commercialRegisterImage[0].filename;
         console.log("Commercial register image saved:", commercialRegisterImage);
       }
+      
+      // معالجة صورة شيك التأمين
+      if (req.files.depositCheckImage && req.files.depositCheckImage.length > 0) {
+        depositCheckImage = req.files.depositCheckImage[0].filename;
+        console.log("Deposit check image saved:", depositCheckImage);
+      }
     }
     
     // Create unique username
@@ -245,7 +263,8 @@ const createReservation = catchAsync(async (req, res, next) => {
     
     // Create random password
     const password = generatePassword(8);
-    const copassword=password;
+    const copassword = password;
+    
     // Create tenant user
     const user = await User.create({
       username,
@@ -272,6 +291,21 @@ const createReservation = catchAsync(async (req, res, next) => {
       notes: tenantNotes
     }, { transaction });
     
+    // تحضير بيانات التأمين
+    const depositData = {};
+    if (includesDeposit === 'true' || includesDeposit === true) {
+      depositData.includesDeposit = true;
+      depositData.depositAmount = depositAmount || null;
+      depositData.depositPaymentMethod = depositPaymentMethod || null;
+      depositData.depositCheckImage = depositCheckImage;
+      depositData.depositStatus = depositStatus || 'unpaid';
+      depositData.depositPaidDate = depositPaidDate || null;
+      depositData.depositReturnedDate = depositReturnedDate || null;
+      depositData.depositNotes = depositNotes || null;
+    } else {
+      depositData.includesDeposit = false;
+    }
+    
     // Create reservation
     const newReservation = await Reservation.create({
       userId: user.id,
@@ -283,8 +317,10 @@ const createReservation = catchAsync(async (req, res, next) => {
       contractPdf,
       paymentMethod: paymentMethod || 'cash',
       paymentSchedule: paymentSchedule || 'monthly',
-      includesDeposit: includesDeposit === 'true' || includesDeposit === true,
-      depositAmount: depositAmount || null,
+      
+      // إضافة بيانات التأمين
+      ...depositData,
+      
       status: 'active',
       notes
     }, { transaction });
@@ -292,8 +328,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     // Update unit status to rented
     await unit.update({ status: 'rented' }, { transaction });
     
-    // Generate payment schedule - FIXED PART STARTS HERE
-    // Pass the unit price directly to the generatePaymentSchedule function
+    // Generate payment schedule
     const paymentScheduleData = generatePaymentSchedule(newReservation, unit.price);
     
     // Create payment records
@@ -309,7 +344,6 @@ const createReservation = catchAsync(async (req, res, next) => {
     });
     
     const createdPayments = await Promise.all(paymentPromises);
-    // FIXED PART ENDS HERE
     
     await transaction.commit();
 
@@ -321,7 +355,8 @@ const createReservation = catchAsync(async (req, res, next) => {
       reservation: {
         ...newReservation.get({ plain: true }),
         contractImageUrl: contractImage ? `${BASE_URL}/uploads/contracts/${contractImage}` : null,
-        contractPdfUrl: contractPdf ? `${BASE_URL}/uploads/contracts/${contractPdf}` : null
+        contractPdfUrl: contractPdf ? `${BASE_URL}/uploads/contracts/${contractPdf}` : null,
+        depositCheckImageUrl: depositCheckImage ? `${BASE_URL}/uploads/checks/${depositCheckImage}` : null
       },
       unit: unit,
       tenant: {
@@ -346,20 +381,24 @@ const createReservation = catchAsync(async (req, res, next) => {
     if (req.files) {
       Object.keys(req.files).forEach(fieldName => {
         req.files[fieldName].forEach(file => {
-          const filePath = path.join(
-            fieldName.includes('contract') ? UPLOAD_PATHS.contracts : UPLOAD_PATHS.identities, 
-            file.filename
-          );
+          let filePath;
+          if (fieldName.includes('contract')) {
+            filePath = path.join(UPLOAD_PATHS.contracts, file.filename);
+          } else if (fieldName === 'depositCheckImage') {
+            filePath = path.join(UPLOAD_PATHS.checks, file.filename);
+          } else {
+            filePath = path.join(UPLOAD_PATHS.identities, file.filename);
+          }
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         });
       });
     }
     
-    // Throw error for central error handler
     throw error;
   }
 });
-// تحديث حجز
+
+// تحديث حجز مع حقول التأمين
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -368,8 +407,16 @@ const updateReservation = catchAsync(async (req, res, next) => {
     status, 
     paymentMethod,
     paymentSchedule,
+    
+    // حقول التأمين المحدثة
     includesDeposit,
     depositAmount,
+    depositPaymentMethod,
+    depositStatus,
+    depositPaidDate,
+    depositReturnedDate,
+    depositNotes,
+    
     notes
   } = req.body;
   
@@ -382,11 +429,11 @@ const updateReservation = catchAsync(async (req, res, next) => {
   // معالجة الملفات المرفقة
   let contractImage = reservation.contractImage;
   let contractPdf = reservation.contractPdf;
+  let depositCheckImage = reservation.depositCheckImage; // جديد
   
   if (req.files) {
-    // معالجة صورة العقد إذا تم توفيرها
+    // معالجة صورة العقد
     if (req.files.contractImage && req.files.contractImage.length > 0) {
-      // حذف صورة العقد القديمة إذا وجدت
       if (reservation.contractImage) {
         const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
         if (fs.existsSync(oldContractPath)) {
@@ -396,9 +443,8 @@ const updateReservation = catchAsync(async (req, res, next) => {
       contractImage = req.files.contractImage[0].filename;
     }
     
-    // معالجة ملف العقد PDF إذا تم توفيره
+    // معالجة ملف العقد PDF
     if (req.files.contractPdf && req.files.contractPdf.length > 0) {
-      // حذف ملف العقد القديم إذا وجد
       if (reservation.contractPdf) {
         const oldPdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
         if (fs.existsSync(oldPdfPath)) {
@@ -407,10 +453,21 @@ const updateReservation = catchAsync(async (req, res, next) => {
       }
       contractPdf = req.files.contractPdf[0].filename;
     }
+    
+    // معالجة صورة شيك التأمين الجديد
+    if (req.files.depositCheckImage && req.files.depositCheckImage.length > 0) {
+      if (reservation.depositCheckImage) {
+        const oldDepositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
+        if (fs.existsSync(oldDepositCheckPath)) {
+          fs.unlinkSync(oldDepositCheckPath);
+        }
+      }
+      depositCheckImage = req.files.depositCheckImage[0].filename;
+    }
   }
   
-  // تحديث الحجز
-  await reservation.update({
+  // تحضير بيانات التحديث
+  const updateData = {
     contractType: contractType || reservation.contractType,
     startDate: startDate || reservation.startDate,
     endDate: endDate || reservation.endDate,
@@ -418,13 +475,45 @@ const updateReservation = catchAsync(async (req, res, next) => {
     contractPdf,
     paymentMethod: paymentMethod || reservation.paymentMethod,
     paymentSchedule: paymentSchedule || reservation.paymentSchedule,
-    includesDeposit: includesDeposit !== undefined ? 
-      (includesDeposit === 'true' || includesDeposit === true) : 
-      reservation.includesDeposit,
-    depositAmount: depositAmount !== undefined ? depositAmount : reservation.depositAmount,
     status: status || reservation.status,
     notes: notes !== undefined ? notes : reservation.notes
-  });
+  };
+  
+  // تحديث بيانات التأمين
+  if (includesDeposit !== undefined) {
+    updateData.includesDeposit = includesDeposit === 'true' || includesDeposit === true;
+  }
+  
+  if (depositAmount !== undefined) {
+    updateData.depositAmount = depositAmount;
+  }
+  
+  if (depositPaymentMethod !== undefined) {
+    updateData.depositPaymentMethod = depositPaymentMethod;
+  }
+  
+  if (depositCheckImage !== undefined) {
+    updateData.depositCheckImage = depositCheckImage;
+  }
+  
+  if (depositStatus !== undefined) {
+    updateData.depositStatus = depositStatus;
+  }
+  
+  if (depositPaidDate !== undefined) {
+    updateData.depositPaidDate = depositPaidDate;
+  }
+  
+  if (depositReturnedDate !== undefined) {
+    updateData.depositReturnedDate = depositReturnedDate;
+  }
+  
+  if (depositNotes !== undefined) {
+    updateData.depositNotes = depositNotes;
+  }
+  
+  // تحديث الحجز
+  await reservation.update(updateData);
   
   // إذا تغيرت الحالة إلى ملغاة أو منتهية، قم بتحديث حالة الوحدة إلى متاحة
   if ((status === 'cancelled' || status === 'expired') && reservation.status === 'active') {

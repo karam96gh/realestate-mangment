@@ -101,9 +101,6 @@ const buildingValidationRules = [
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
 // قواعد التحقق من الحجز - محدثة لدعم إنشاء مستأجر جديد
 const reservationValidationRules = [
-  // حذف التحقق من معرف المستخدم لأنه لم يعد مطلوبًا
-  // check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
-  
   check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
   check('contractType').optional({ nullable: true }).isIn(['residential', 'commercial']).withMessage('نوع العقد يجب أن يكون سكني أو تجاري'),
   check('startDate').isDate().withMessage('تاريخ بداية العقد مطلوب وبتنسيق صحيح'),
@@ -113,8 +110,16 @@ const reservationValidationRules = [
   check('paymentSchedule').optional({ nullable: true }).isIn([
     'monthly', 'quarterly', 'triannual', 'biannual', 'annual'
   ]).withMessage('جدول الدفع غير صالح'),
+  
+  // قواعد التحقق من التأمين - محدثة
   check('includesDeposit').optional({ nullable: true }).isBoolean().withMessage('يشمل الضمان يجب أن يكون قيمة منطقية'),
   check('depositAmount').optional({ nullable: true }).isNumeric().withMessage('قيمة الضمان يجب أن تكون رقمًا'),
+  check('depositPaymentMethod').optional({ nullable: true }).isIn(['cash', 'check']).withMessage('طريقة دفع التأمين يجب أن تكون نقدي أو شيك'),
+  check('depositStatus').optional({ nullable: true }).isIn(['unpaid', 'paid', 'returned']).withMessage('حالة التأمين غير صالحة'),
+  check('depositPaidDate').optional({ nullable: true }).isDate().withMessage('تاريخ دفع التأمين يجب أن يكون تاريخًا صالحًا'),
+  check('depositReturnedDate').optional({ nullable: true }).isDate().withMessage('تاريخ استرجاع التأمين يجب أن يكون تاريخًا صالحًا'),
+  check('depositNotes').optional({ nullable: true }),
+  
   check('notes').optional({ nullable: true }),
   
   // إضافة قواعد التحقق من بيانات المستأجر الجديد
@@ -137,6 +142,29 @@ const reservationValidationRules = [
   check('tenantContactPerson').optional({ nullable: true }),
   check('tenantContactPosition').optional({ nullable: true }),
   check('tenantNotes').optional({ nullable: true })
+];
+
+// تحديث قواعد التحقق من الحجز للتحديث (بدون بيانات المستأجر)
+const reservationUpdateValidationRules = [
+  check('contractType').optional({ nullable: true }).isIn(['residential', 'commercial']).withMessage('نوع العقد يجب أن يكون سكني أو تجاري'),
+  check('startDate').optional({ nullable: true }).isDate().withMessage('تاريخ بداية العقد يجب أن يكون تاريخًا صالحًا'),
+  check('endDate').optional({ nullable: true }).isDate().withMessage('تاريخ نهاية العقد يجب أن يكون تاريخًا صالحًا'),
+  check('status').optional({ nullable: true }).isIn(['active', 'expired', 'cancelled']).withMessage('حالة الحجز غير صالحة'),
+  check('paymentMethod').optional({ nullable: true }).isIn(['cash', 'checks']).withMessage('طريقة الدفع يجب أن تكون نقدًا أو شيكات'),
+  check('paymentSchedule').optional({ nullable: true }).isIn([
+    'monthly', 'quarterly', 'triannual', 'biannual', 'annual'
+  ]).withMessage('جدول الدفع غير صالح'),
+  
+  // قواعد التحقق من التأمين للتحديث
+  check('includesDeposit').optional({ nullable: true }).isBoolean().withMessage('يشمل الضمان يجب أن يكون قيمة منطقية'),
+  check('depositAmount').optional({ nullable: true }).isNumeric().withMessage('قيمة الضمان يجب أن تكون رقمًا'),
+  check('depositPaymentMethod').optional({ nullable: true }).isIn(['cash', 'check']).withMessage('طريقة دفع التأمين يجب أن تكون نقدي أو شيك'),
+  check('depositStatus').optional({ nullable: true }).isIn(['unpaid', 'paid', 'returned']).withMessage('حالة التأمين غير صالحة'),
+  check('depositPaidDate').optional({ nullable: true }).isDate().withMessage('تاريخ دفع التأمين يجب أن يكون تاريخًا صالحًا'),
+  check('depositReturnedDate').optional({ nullable: true }).isDate().withMessage('تاريخ استرجاع التأمين يجب أن يكون تاريخًا صالحًا'),
+  check('depositNotes').optional({ nullable: true }),
+  
+  check('notes').optional({ nullable: true })
 ];
 
 // قواعد التحقق من طلب الخدمة
@@ -175,5 +203,6 @@ module.exports = {
   serviceOrderValidationRules,
   paymentValidationRules,
   loginValidationRules,
-  resetManagerPasswordvalidate
+  resetManagerPasswordvalidate,
+  reservationUpdateValidationRules
 };

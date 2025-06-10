@@ -1,16 +1,17 @@
-// routes/reservation.routes.js - النسخة المصححة
+// routes/reservation.routes.js - تحديث المسارات لدعم صورة شيك التأمين
+
 const express = require('express');
 const router = express.Router();
 const reservationController = require('../controllers/reservation.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const { isAdminOrManager, isAdminOrManagerOrAccountant } = require('../middleware/role.middleware');
-const { validate, reservationValidationRules, validateReservationContext } = require('../middleware/validation.middleware');
+const { validate, reservationValidationRules, reservationUpdateValidationRules } = require('../middleware/validation.middleware');
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { UPLOAD_PATHS } = require('../config/upload');
 
-// إعداد تخزين ملفات متعدد الوجهات - هذا هو الحل للمشكلة
+// إعداد تخزين ملفات متعدد الوجهات مع دعم شيك التأمين
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
     let uploadPath;
@@ -26,17 +27,20 @@ const storage = multer.diskStorage({
       case 'commercialRegisterImage':
         uploadPath = UPLOAD_PATHS.identities;
         break;
+      case 'depositCheckImage': // جديد - صورة شيك التأمين
+        uploadPath = UPLOAD_PATHS.checks;
+        break;
       default:
         uploadPath = UPLOAD_PATHS.attachments; // مجلد افتراضي
         break;
     }
     
-    console.log(`حفظ الملف ${file.fieldname} في: ${uploadPath}`); // للتأكد من المسار
+    console.log(`حفظ الملف ${file.fieldname} في: ${uploadPath}`);
     cb(null, uploadPath);
   },
   filename: function(req, file, cb) {
     const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;
-    console.log(`اسم الملف الجديد: ${uniqueFileName}`); // للتأكد من الاسم
+    console.log(`اسم الملف الجديد: ${uniqueFileName}`);
     cb(null, uniqueFileName);
   }
 });
@@ -105,12 +109,6 @@ const logFileInfo = (req, res, next) => {
         console.log('---');
       });
     });
-  } else if (req.file) {
-    console.log('=== معلومات الملف المرفوع ===');
-    console.log(`الحقل: ${req.file.fieldname}`);
-    console.log(`اسم الملف: ${req.file.filename}`);
-    console.log(`المسار: ${req.file.destination}`);
-    console.log(`الحجم: ${req.file.size} بايت`);
   }
   next();
 };
@@ -127,32 +125,37 @@ router.get('/', isAdminOrManagerOrAccountant, reservationController.getAllReserv
 // الحصول على حجز حسب المعرف
 router.get('/:id', reservationController.getReservationById);
 
-// إنشاء حجز جديد مع رفع الملفات في المجلدات الصحيحة
+// إنشاء حجز جديد مع رفع الملفات في المجلدات الصحيحة (مع دعم شيك التأمين)
 router.post(
   '/',
   isAdminOrManager,
   upload.fields([
-    { name: 'contractImage', maxCount: 1 },      // سيُحفظ في contracts
-    { name: 'contractPdf', maxCount: 1 },        // سيُحفظ في contracts
-    { name: 'identityImageFront', maxCount: 1 }, // سيُحفظ في identities
-    { name: 'identityImageBack', maxCount: 1 },  // سيُحفظ في identities
-    { name: 'commercialRegisterImage', maxCount: 1 } // سيُحفظ في identities
+    { name: 'contractImage', maxCount: 1 },           // سيُحفظ في contracts
+    { name: 'contractPdf', maxCount: 1 },             // سيُحفظ في contracts
+    { name: 'identityImageFront', maxCount: 1 },      // سيُحفظ في identities
+    { name: 'identityImageBack', maxCount: 1 },       // سيُحفظ في identities
+    { name: 'commercialRegisterImage', maxCount: 1 }, // سيُحفظ في identities
+    { name: 'depositCheckImage', maxCount: 1 }        // سيُحفظ في checks - جديد
   ]),
-  
+  handleUploadError,
+  logFileInfo,
+  reservationValidationRules,
   validate,
   reservationController.createReservation
 );
 
-// تحديث حجز
+// تحديث حجز (مع دعم تحديث شيك التأمين)
 router.put(
   '/:id',
   isAdminOrManager,
   upload.fields([
-    { name: 'contractImage', maxCount: 1 },  // سيُحفظ في contracts
-    { name: 'contractPdf', maxCount: 1 }     // سيُحفظ في contracts
+    { name: 'contractImage', maxCount: 1 },    // سيُحفظ في contracts
+    { name: 'contractPdf', maxCount: 1 },      // سيُحفظ في contracts
+    { name: 'depositCheckImage', maxCount: 1 } // سيُحفظ في checks - جديد
   ]),
   handleUploadError,
-  logFileInfo, // يمكن إزالته
+  logFileInfo,
+  reservationUpdateValidationRules,
   validate,
   reservationController.updateReservation
 );

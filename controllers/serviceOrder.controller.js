@@ -20,7 +20,7 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
   let whereCondition = {};
   
   // نهج مختلف للتصفية: سنحصل أولاً على قائمة معرفات الحجوزات المسموح بها
-  if (req.user.role === 'manager'||req.user.role === 'maintenance') {
+  if (req.user.role === 'manager'||req.user.role === 'maintenance'||req.user.role === 'accountant') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
@@ -71,6 +71,16 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     
     // تحديد حالة البحث لطلبات الخدمة
     whereCondition.reservationId = { [Op.in]: reservationIds };
+    
+    // إضافة تصفية نوع الخدمة حسب دور المستخدم
+    if (req.user.role === 'maintenance') {
+      // عامل الصيانة يرى طلبات الصيانة فقط
+      whereCondition.serviceType = 'maintenance';
+    } else if (req.user.role === 'accountant') {
+      // المحاسب يرى الطلبات المالية فقط
+      whereCondition.serviceType = 'financial';
+    }
+    // المدير يرى جميع الطلبات (لا نضيف تصفية إضافية)
   }
   
   // الاستعلام عن طلبات الخدمة مع تضمين جميع المعلومات المطلوبة

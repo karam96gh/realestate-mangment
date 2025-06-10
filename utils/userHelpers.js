@@ -53,8 +53,10 @@ const getTenantIdsByCompany = async (companyId) => {
  */
 const createUserWhereCondition = async (currentUser) => {
   if (currentUser.role === 'admin') {
-    // Admin يمكنه رؤية جميع المستخدمين
-    return {};
+    // Admin يرى فقط المستخدمين من نوع admin و manager
+    return {
+      role: { [Op.in]: ['admin', 'manager'] }
+    };
   }
   
   if (currentUser.role === 'manager') {
@@ -67,11 +69,9 @@ const createUserWhereCondition = async (currentUser) => {
     
     // إنشاء شرط البحث
     const conditions = [
-            { role: 'accountant', companyId: currentUser.companyId },
-                  { role: 'maintenance', companyId: currentUser.companyId },
+      { role: 'accountant', companyId: currentUser.companyId },
+      { role: 'maintenance', companyId: currentUser.companyId },
       { role: 'owner', companyId: currentUser.companyId },
-
-
     ];
     
     // إضافة المستأجرين إذا وجدوا

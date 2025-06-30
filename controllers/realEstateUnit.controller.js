@@ -188,6 +188,8 @@ const createUnit = catchAsync(async (req, res, next) => {
     area, 
     bathrooms, 
     price, 
+        parkingNumber, // إضافة هذا السطر
+
     status, 
     description 
   } = req.body;
@@ -232,7 +234,25 @@ const createUnit = catchAsync(async (req, res, next) => {
   if (existingUnit) {
     return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
   }
-  
+   if (parkingNumber) {
+    // التحقق من أن رقم الموقف لم يُستخدم من قبل في نفس المبنى
+    const existingParkingUnit = await RealEstateUnit.findOne({
+      where: {
+        buildingId,
+        parkingNumber
+      }
+    });
+    
+    if (existingParkingUnit) {
+      return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
+    }
+    const building = await Building.findByPk(buildingId);
+    const maxParkingNumber = building.internalParkingSpaces;
+    
+    if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
+      return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
+    }
+  }
   const newUnit = await RealEstateUnit.create({
     buildingId,
     ownerId: validatedOwnerId,
@@ -242,6 +262,8 @@ const createUnit = catchAsync(async (req, res, next) => {
     floor,
     area,
     bathrooms,
+        parkingNumber, // إضافة هذا السطر
+
     price,
     status: status || 'available',
     description
@@ -288,7 +310,6 @@ const updateUnit = catchAsync(async (req, res, next) => {
       return next(new AppError('غير مصرح لك بتعديل وحدات لا تنتمي لشركتك', 403));
     }
   }
-  
   const { 
     buildingId,
     ownerId,
@@ -297,7 +318,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
     unitLayout,
     floor, 
     area, 
-    bathrooms, 
+    bathrooms,
+    parkingNumber, // إضافة هذا السطر
     price, 
     status, 
     description 
@@ -345,6 +367,31 @@ const updateUnit = catchAsync(async (req, res, next) => {
       return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
     }
   }
+    if (parkingNumber !== undefined && parkingNumber !== unit.parkingNumber) {
+    if (parkingNumber) {
+      // التحقق من عدم وجود تعارض مع موقف آخر
+      const targetBuildingId = buildingId || unit.buildingId;
+      const existingParkingUnit = await RealEstateUnit.findOne({
+        where: {
+          buildingId: targetBuildingId,
+          parkingNumber,
+          id: { [Op.ne]: req.params.id }
+        }
+      });
+      
+      if (existingParkingUnit) {
+        return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
+      }
+      
+      // التحقق من النطاق المسموح
+      const building = await Building.findByPk(targetBuildingId);
+      const maxParkingNumber = building.internalParkingSpaces;
+      
+      if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
+        return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
+      }
+    }
+  }
   
   // Update unit
   await unit.update({
@@ -356,6 +403,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
     floor: floor !== undefined ? floor : unit.floor,
     area: area !== undefined ? area : unit.area,
     bathrooms: bathrooms !== undefined ? bathrooms : unit.bathrooms,
+    parkingNumber: parkingNumber !== undefined ? parkingNumber : unit.parkingNumber, // إضافة هذا السطر
     price: price !== undefined ? price : unit.price,
     status: status || unit.status,
     description: description !== undefined ? description : unit.description
@@ -422,6 +470,60 @@ const getUnitsByBuildingId = catchAsync(async (req, res, next) => {
     data: units
   });
 });
+// إضافة هذه الدالة في نهاية الملف قبل module.exports
+
+// Get available parking spots for a building
+const getAvailableParkingSpots = catchAsync(async (req, res, next) => {
+  const { buildingId } = req.params;
+  
+  // التحقق من وجود المبنى
+  const building = await Building.findByPk(buildingId);
+  if (!building) {
+    return next(new AppError('المبنى غير موجود', 404));
+  }
+  
+  // التحقق من الصلاحيات للمدير
+  if (req.user.role === 'manager' && req.user.companyId !== building.companyId) {
+    return next(new AppError('غير مصرح لك بعرض مواقف هذا المبنى', 403));
+  }
+  
+  // الحصول على جميع المواقف المستخدمة في هذا المبنى
+  const usedParkingSpots = await RealEstateUnit.findAll({
+    where: { 
+      buildingId,
+      parkingNumber: { [Op.ne]: null }
+    },
+    attributes: ['parkingNumber']
+  });
+  
+  const usedNumbers = usedParkingSpots
+    .map(unit => unit.parkingNumber)
+    .filter(num => num !== null && num !== '');
+  
+  // إنشاء قائمة المواقف المتاحة
+  const totalParkingSpaces = building.internalParkingSpaces;
+  const availableSpots = [];
+  
+  for (let i = 1; i <= totalParkingSpaces; i++) {
+    const parkingNumber = i.toString();
+    if (!usedNumbers.includes(parkingNumber)) {
+      availableSpots.push(parkingNumber);
+    }
+  }
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      buildingId,
+      buildingName: building.name,
+      totalParkingSpaces,
+      usedParkingSpaces: usedNumbers.length,
+      availableParkingSpaces: availableSpots.length,
+      availableSpots,
+      usedSpots: usedNumbers
+    }
+  });
+});
 
 
 
@@ -432,5 +534,6 @@ module.exports = {
   updateUnit,
   deleteUnit,
   getUnitsByBuildingId,
-  getAvailableUnits
+  getAvailableUnits,
+  getAvailableParkingSpots
 };

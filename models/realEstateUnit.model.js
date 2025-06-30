@@ -1,4 +1,3 @@
-// Updated RealEstateUnit Model
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const Building = require('./building.model');
@@ -50,6 +49,12 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
   },
   bathrooms: {
     type: DataTypes.INTEGER
+  },
+  // إضافة حقل رقم الموقف
+  parkingNumber: {
+    type: DataTypes.STRING(10),
+    allowNull: true,
+    comment: 'رقم الموقف المخصص للوحدة'
   },
   price: {
     type: DataTypes.DECIMAL(10, 2),

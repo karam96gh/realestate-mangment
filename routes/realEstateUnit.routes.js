@@ -12,6 +12,8 @@ router.get('/:id', realEstateUnitController.getUnitById);
 router.use(isAdminOrManagerOrOwner);
 // Public routes
 router.get('/', realEstateUnitController.getAllUnits);
+router.get('/parking/available/:buildingId', realEstateUnitController.getAvailableParkingSpots);
+
 router.get('/unit-building/available', realEstateUnitController.getAvailableUnits);
 router.get('/building/:buildingId', realEstateUnitController.getUnitsByBuildingId);
 

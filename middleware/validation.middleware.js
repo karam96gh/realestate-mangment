@@ -76,6 +76,8 @@ const unitValidationRules = [
   check('unitLayout').optional({ nullable: true }).isIn(['studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other']).withMessage('تخطيط الوحدة غير صالح'),
   // Modified floor validation - no longer integer
 check('floor').optional({ nullable: true }).isString().withMessage('الطابق يجب أن يكون صالحًا'),
+check('parkingNumber').optional({ nullable: true }).isString().withMessage('رقم الموقف يجب أن يكون نصًا'),
+
   check('area').optional({ nullable: true }).isNumeric().withMessage('المساحة يجب أن تكون رقمًا'),
   // bedrooms validation removed
   check('bathrooms').optional({ nullable: true }).isInt().withMessage('عدد الحمامات يجب أن يكون رقمًا صحيحًا'),

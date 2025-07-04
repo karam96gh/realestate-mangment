@@ -27,7 +27,6 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
     whereCondition.companyId = req.user.companyId;
   } 
   else if (req.user.role === 'owner') {
-    // تحديد نوع المستأجر: مستأجر عادي أم مالك
     // الحصول على الوحدات المملوكة للمستخدم
     const ownedUnits = await RealEstateUnit.findAll({
       where: { ownerId: req.user.id },
@@ -40,11 +39,11 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
       const buildingIds = ownedUnits.map(unit => unit.buildingId);
       whereCondition.id = { [Op.in]: buildingIds };
       
-      // إضافة معلومات الوحدات المملوكة في كل بناية
+      // ✅ إضافة معلومات الوحدات المملوكة فقط في كل بناية
       includeConditions.push({
         model: RealEstateUnit,
         as: 'units',
-        where: { ownerId: req.user.id },
+        where: { ownerId: req.user.id }, // ✅ فقط الوحدات المملوكة
         attributes: ['id', 'unitNumber', 'unitType', 'price', 'status'],
         required: false
       });
@@ -66,7 +65,7 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
   let additionalInfo = {};
   
   if (req.user.role === 'owner') {
-    // إضافة إحصائيات للمستأجر/المالك
+    // إضافة إحصائيات للمالك
     const ownedUnitsCount = await RealEstateUnit.count({
       where: { ownerId: req.user.id }
     });
@@ -180,9 +179,8 @@ const getBuildingById = catchAsync(async (req, res, next) => {
       order: [['unitNumber', 'ASC']]
     });
     
-    // ✅ إضافة الوحدات المملوكة فقط إلى بيانات البناية
+    // ✅ استبدال الوحدات بالوحدات المملوكة فقط (نفس التنسيق)
     responseData.ownedUnits = ownedUnits;
-    
     
     // ✅ إحصائيات الوحدات المملوكة فقط في هذه البناية
     const unitStats = {
@@ -328,7 +326,6 @@ const getBuildingById = catchAsync(async (req, res, next) => {
     ...additionalInfo
   });
 });
-
 
 // تعديل دالة إنشاء المبنى
 const createBuilding = catchAsync(async (req, res, next) => {

@@ -16,6 +16,7 @@ const serviceOrderRoutes = require('./routes/serviceOrder.routes');
 const paymentHistoryRoutes = require('./routes/paymentHistory.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const tenantRoutes = require('./routes/tenant.routes');
+const ownerReportRoutes = require('./routes/ownerReport.routes');
 
 const expenseRoutes = require('./routes/expense.routes');
 
@@ -48,6 +49,7 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/services', serviceOrderRoutes);
 app.use('/api/payments', paymentHistoryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/owner-reports', ownerReportRoutes);
 // تسجيل المسارات في التطبيق
 app.use('/api/tenants', tenantRoutes);
 // Default route

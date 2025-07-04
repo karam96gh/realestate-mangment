@@ -3,6 +3,8 @@ const RealEstateUnit = require('../models/realEstateUnit.model');
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
 const Reservation = require('../models/reservation.model');
+const ServiceOrder = require('../models/serviceOrder.model');
+
 const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
@@ -437,16 +439,21 @@ const getUnitById = catchAsync(async (req, res, next) => {
       limit: 5
     });
     
-    // const serviceOrders = await ServiceOrder.count({
-    //   where: { status: 'pending' },
-    //   include: [{
-    //     model: Reservation,
-    //     as: 'reservation',
-    //     where: { unitId: unit.id }
-    //   }]
-    // });
+    const serviceOrders = await ServiceOrder.count({
+      where: { status: 'pending' },
+      include: [{
+        model: Reservation,
+        as: 'reservation',
+        where: { unitId: unit.id }
+      }]
+    });
     
-  
+    additionalInfo = {
+      unitHistory: {
+        recentReservations: reservations,
+        pendingServiceOrders: serviceOrders
+      }
+    };
   }
   
   res.status(200).json({

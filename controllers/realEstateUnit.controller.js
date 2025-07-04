@@ -446,18 +446,13 @@ const getUnitById = catchAsync(async (req, res, next) => {
       }]
     });
     
-    additionalInfo = {
-      unitHistory: {
-        recentReservations: reservations,
-        pendingServiceOrders: serviceOrders
-      }
-    };
+  
   }
   
   res.status(200).json({
     status: 'success',
-    data: unitWithCompleteInfo,
-    ...additionalInfo
+    data: unitWithCompleteInfo
+    
   });
 });
 

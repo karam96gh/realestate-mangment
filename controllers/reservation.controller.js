@@ -523,6 +523,7 @@ const updateReservation = catchAsync(async (req, res, next) => {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
       await unit.update({ status: 'available' });
+      console.log('dssskkkks');
     }
   }
   

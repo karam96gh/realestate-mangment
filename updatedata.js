@@ -1,17 +1,17 @@
 // scripts/updateDatabase.js - أسهل طريقة لتحديث قاعدة البيانات
 
-const sequelize = require('/config/database');
+const sequelize = require('./config/database');
 
 // استيراد جميع النماذج لضمان تحديثها
-require('/models/user.model');
-require('/models/company.model');
-require('/models/building.model');
-require('/models/realEstateUnit.model');
-require('/models/reservation.model');
-require('/models/serviceOrder.model');
-require('/models/paymentHistory.model');
-require('/models/tenant.model');
-require('/models/expense.model');
+require('./models/user.model');
+require('./models/company.model');
+require('./models/building.model');
+require('./models/realEstateUnit.model');
+require('./models/reservation.model');
+require('./models/serviceOrder.model');
+require('./models/paymentHistory.model');
+require('./models/tenant.model');
+require('./models/expense.model');
 
 /**
  * الطريقة الأسهل والأكثر أماناً - تحديث تلقائي

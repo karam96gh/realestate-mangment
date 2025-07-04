@@ -293,8 +293,13 @@ const getOwnerFinancialReport = catchAsync(async (req, res, next) => {
     });
   });
 
-  // إعداد الاستجابة
-  const fileName = `تقرير_مالي_${ownedUnits[0].owner.fullName.replace(/\s+/g, '_')}_${currentMonth}_${currentYear}.xlsx`;
+  // إعداد الاستجابة - استخدام اسم ملف آمن بالإنجليزية فقط
+  const ownerNameSafe = ownedUnits[0].owner.fullName
+    .replace(/\s+/g, '_')
+    .replace(/[^\w\-_.]/g, '')
+    .substring(0, 20); // تحديد طول الاسم
+    
+  const fileName = `Financial_Report_${ownerNameSafe}_${currentMonth}_${currentYear}.xlsx`;
   
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

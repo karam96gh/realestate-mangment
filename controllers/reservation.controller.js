@@ -405,6 +405,8 @@ const createReservation = catchAsync(async (req, res, next) => {
 
 // استبدال دالة updateReservation في controllers/reservation.controller.js
 
+// إصلاح دالة updateReservation في controllers/reservation.controller.js
+
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -432,7 +434,10 @@ const updateReservation = catchAsync(async (req, res, next) => {
     return next(new AppError('الحجز غير موجود', 404));
   }
   
-  console.log('الحالة الحالية للحجز:', reservation.status);
+  // ***** حفظ الحالة الأصلية قبل التحديث *****
+  const originalStatus = reservation.status;
+  
+  console.log('الحالة الأصلية للحجز:', originalStatus);
   console.log('الحالة الجديدة:', status);
   
   // معالجة الملفات المرفقة
@@ -525,25 +530,25 @@ const updateReservation = catchAsync(async (req, res, next) => {
   await reservation.update(updateData);
   
   // ***** تحديث حالة الوحدة عند تغيير حالة الحجز *****
-  if (status && (status === 'cancelled' || status === 'expired') && reservation.status === 'active') {
+  // استخدام الحالة الأصلية للمقارنة، وليس الحالة بعد التحديث
+  if (status && (status === 'cancelled' || status === 'expired') && originalStatus === 'active') {
     try {
-      console.log('محاولة تحديث حالة الوحدة...');
+      console.log('🔄 محاولة تحديث حالة الوحدة...');
       console.log('معرف الوحدة:', reservation.unitId);
       
       const unit = await RealEstateUnit.findByPk(reservation.unitId);
       if (!unit) {
-        console.error('لم يتم العثور على الوحدة');
+        console.error('❌ لم يتم العثور على الوحدة');
         return next(new AppError('الوحدة غير موجودة', 404));
       }
       
       console.log('الحالة الحالية للوحدة:', unit.status);
       
-      const updateResult = await unit.update({ status: 'available' });
-      console.log('نتيجة تحديث الوحدة:', updateResult.status);
-      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - تغيير حالة الحجز إلى ${status}`);
+      await unit.update({ status: 'available' });
+      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - تغيير حالة الحجز من ${originalStatus} إلى ${status}`);
       
     } catch (error) {
-      console.error('خطأ في تحديث حالة الوحدة:', error);
+      console.error('❌ خطأ في تحديث حالة الوحدة:', error);
       // لا نوقف العملية، فقط نسجل الخطأ
     }
   }
@@ -551,69 +556,6 @@ const updateReservation = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     data: reservation
-  });
-});
-
-// استبدال دالة deleteReservation في controllers/reservation.controller.js
-
-const deleteReservation = catchAsync(async (req, res, next) => {
-  const reservation = await Reservation.findByPk(req.params.id);
-  
-  if (!reservation) {
-    return next(new AppError('الحجز غير موجود', 404));
-  }
-  
-  console.log('حذف الحجز رقم:', reservation.id);
-  console.log('معرف الوحدة:', reservation.unitId);
-  
-  // حذف صورة العقد إذا وجدت
-  if (reservation.contractImage) {
-    const contractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
-    if (fs.existsSync(contractPath)) {
-      fs.unlinkSync(contractPath);
-    }
-  }
-  
-  // حذف ملف العقد PDF إذا وجد
-  if (reservation.contractPdf) {
-    const pdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
-    if (fs.existsSync(pdfPath)) {
-      fs.unlinkSync(pdfPath);
-    }
-  }
-  
-  // حذف صورة شيك التأمين إذا وجدت
-  if (reservation.depositCheckImage) {
-    const depositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
-    if (fs.existsSync(depositCheckPath)) {
-      fs.unlinkSync(depositCheckPath);
-    }
-  }
-  
-  // ***** تحديث حالة الوحدة عند حذف الحجز *****
-  try {
-    console.log('محاولة تحرير الوحدة عند الحذف...');
-    
-    const unit = await RealEstateUnit.findByPk(reservation.unitId);
-    if (!unit) {
-      console.error('لم يتم العثور على الوحدة');
-    } else {
-      console.log('الحالة الحالية للوحدة:', unit.status);
-      
-      const updateResult = await unit.update({ status: 'available' });
-      console.log('نتيجة تحديث الوحدة:', updateResult.status);
-      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - حذف الحجز ${reservation.id}`);
-    }
-  } catch (error) {
-    console.error('خطأ في تحرير الوحدة عند الحذف:', error);
-    // لا نوقف العملية، فقط نسجل الخطأ
-  }
-  
-  await reservation.destroy();
-  
-  res.status(204).json({
-    status: 'success',
-    data: null
   });
 });
 // الحصول على الحجوزات حسب معرف الوحدة

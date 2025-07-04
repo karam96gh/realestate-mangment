@@ -8,6 +8,7 @@ const Reservation = require('../models/reservation.model');
 const ServiceOrder = require('../models/serviceOrder.model');
 const PaymentHistory = require('../models/paymentHistory.model');
 const tenant = require('../models/tenant.model');
+const expense = require('../models/expense.model');
 
 const bcrypt = require('bcryptjs');
 

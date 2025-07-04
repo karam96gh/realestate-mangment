@@ -183,7 +183,7 @@ const isAdminOrManagerOrMaintenanceOrAccountant = (req, res, next) => {
     return res.status(401).json({ message: 'عذرًا، يجب تسجيل الدخول أولاً!' });
   }
   
-  if (!['admin', 'manager', 'maintenance','accountant'].includes(req.user.role)) {
+  if (!['admin', 'manager', 'maintenance','accountant','owner'].includes(req.user.role)) {
     return res.status(403).json({ message: 'عذرًا، هذه الصفحة مخصصة للمسؤولين، المديرين، أو عمال الصيانة فقط.' });
   }
   

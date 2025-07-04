@@ -399,6 +399,9 @@ const createReservation = catchAsync(async (req, res, next) => {
 });
 
 // تحديث حجز مع حقول التأمين
+// تحديث دالة updateReservation في controllers/reservation.controller.js
+
+// تحديث حجز مع حقول التأمين
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -429,7 +432,7 @@ const updateReservation = catchAsync(async (req, res, next) => {
   // معالجة الملفات المرفقة
   let contractImage = reservation.contractImage;
   let contractPdf = reservation.contractPdf;
-  let depositCheckImage = reservation.depositCheckImage; // جديد
+  let depositCheckImage = reservation.depositCheckImage;
   
   if (req.files) {
     // معالجة صورة العقد

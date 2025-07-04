@@ -402,6 +402,7 @@ const createReservation = catchAsync(async (req, res, next) => {
 // تحديث دالة updateReservation في controllers/reservation.controller.js
 
 // تحديث حجز مع حقول التأمين
+
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -432,7 +433,7 @@ const updateReservation = catchAsync(async (req, res, next) => {
   // معالجة الملفات المرفقة
   let contractImage = reservation.contractImage;
   let contractPdf = reservation.contractPdf;
-  let depositCheckImage = reservation.depositCheckImage;
+  let depositCheckImage = reservation.depositCheckImage; // جديد
   
   if (req.files) {
     // معالجة صورة العقد
@@ -518,12 +519,12 @@ const updateReservation = catchAsync(async (req, res, next) => {
   // تحديث الحجز
   await reservation.update(updateData);
   
-  // إذا تغيرت الحالة إلى ملغاة أو منتهية، قم بتحديث حالة الوحدة إلى متاحة
+  // ***** التحديث الجديد: إذا تغيرت الحالة إلى ملغاة أو منتهية، حرر الوحدة *****
   if ((status === 'cancelled' || status === 'expired') && reservation.status === 'active') {
     const unit = await RealEstateUnit.findByPk(reservation.unitId);
     if (unit) {
       await unit.update({ status: 'available' });
-      console.log('dssskkkks');
+      console.log(`تم تحرير الوحدة ${unit.unitNumber} - تغيير حالة الحجز إلى ${status}`);
     }
   }
   
@@ -534,6 +535,7 @@ const updateReservation = catchAsync(async (req, res, next) => {
 });
 
 // حذف حجز
+
 const deleteReservation = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id);
   
@@ -557,12 +559,19 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // تحديث حالة الوحدة إلى متاحة إذا كان الحجز نشطًا
-  if (reservation.status === 'active') {
-    const unit = await RealEstateUnit.findByPk(reservation.unitId);
-    if (unit) {
-      await unit.update({ status: 'available' });
+  // حذف صورة شيك التأمين إذا وجدت
+  if (reservation.depositCheckImage) {
+    const depositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
+    if (fs.existsSync(depositCheckPath)) {
+      fs.unlinkSync(depositCheckPath);
     }
+  }
+  
+  // ***** التحديث الجديد: تحرير الوحدة عند حذف الحجز *****
+  const unit = await RealEstateUnit.findByPk(reservation.unitId);
+  if (unit) {
+    await unit.update({ status: 'available' });
+    console.log(`تم تحرير الوحدة ${unit.unitNumber} - حذف الحجز ${reservation.id}`);
   }
   
   await reservation.destroy();
@@ -572,7 +581,6 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     data: null
   });
 });
-
 // الحصول على الحجوزات حسب معرف الوحدة
 const getReservationsByUnitId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({

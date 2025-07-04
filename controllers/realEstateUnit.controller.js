@@ -437,14 +437,14 @@ const getUnitById = catchAsync(async (req, res, next) => {
       limit: 5
     });
     
-    const serviceOrders = await ServiceOrder.count({
-      where: { status: 'pending' },
-      include: [{
-        model: Reservation,
-        as: 'reservation',
-        where: { unitId: unit.id }
-      }]
-    });
+    // const serviceOrders = await ServiceOrder.count({
+    //   where: { status: 'pending' },
+    //   include: [{
+    //     model: Reservation,
+    //     as: 'reservation',
+    //     where: { unitId: unit.id }
+    //   }]
+    // });
     
   
   }

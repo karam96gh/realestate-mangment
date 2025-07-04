@@ -165,11 +165,11 @@ const getBuildingById = catchAsync(async (req, res, next) => {
   
   // إضافة معلومات خاصة للمالك
   if (req.user.role === 'owner') {
-    // جلب الوحدات المملوكة في هذه البناية مع تفاصيل كاملة
+    // ✅ جلب فقط الوحدات المملوكة للمستخدم في هذه البناية
     const ownedUnits = await RealEstateUnit.findAll({
       where: { 
-        ownerId: req.user.id,
-        buildingId: building.id 
+        ownerId: req.user.id,        // ✅ فقط وحداتي
+        buildingId: building.id      // ✅ في هذه البناية
       },
       include: [{
         model: User,
@@ -180,34 +180,11 @@ const getBuildingById = catchAsync(async (req, res, next) => {
       order: [['unitNumber', 'ASC']]
     });
     
-    // تحويل بيانات الوحدات لإضافة المعلومات المستخرجة
-    const unitsWithCompleteInfo = ownedUnits.map(unit => {
-      const unitData = unit.toJSON();
-      return {
-        // معلومات الوحدة الأساسية
-        id: unitData.id,
-        unitNumber: unitData.unitNumber,
-        unitType: unitData.unitType,
-        unitLayout: unitData.unitLayout,
-        floor: unitData.floor,
-        area: unitData.area,
-        bathrooms: unitData.bathrooms,
-        parkingNumber: unitData.parkingNumber,
-        price: unitData.price,
-        status: unitData.status,
-        description: unitData.description,
-        
-        // معلومات المالك المستخرجة
-        ownerName: unitData.owner ? unitData.owner.fullName : null,
-        ownerEmail: unitData.owner ? unitData.owner.email : null,
-        ownerPhone: unitData.owner ? unitData.owner.phone : null,
-        
-        // الكائن الأصلي للمرجعية
-        owner: unitData.owner
-      };
-    });
+    // ✅ إضافة الوحدات المملوكة فقط إلى بيانات البناية
+    responseData.ownedUnits = ownedUnits;
     
-    // إحصائيات الوحدات المملوكة في هذه البناية
+    
+    // ✅ إحصائيات الوحدات المملوكة فقط في هذه البناية
     const unitStats = {
       totalOwnedUnits: ownedUnits.length,
       availableUnits: ownedUnits.filter(unit => unit.status === 'available').length,
@@ -218,7 +195,7 @@ const getBuildingById = catchAsync(async (req, res, next) => {
         .reduce((sum, unit) => sum + parseFloat(unit.price), 0)
     };
     
-    // معلومات الحجوزات النشطة للوحدات المملوكة
+    // ✅ معلومات الحجوزات النشطة للوحدات المملوكة فقط
     const activeReservations = await Reservation.findAll({
       where: {
         status: { [Op.in]: ['active', 'pending'] }
@@ -227,8 +204,8 @@ const getBuildingById = catchAsync(async (req, res, next) => {
         model: RealEstateUnit,
         as: 'unit',
         where: { 
-          ownerId: req.user.id,
-          buildingId: building.id 
+          ownerId: req.user.id,        // ✅ فقط وحداتي
+          buildingId: building.id      // ✅ في هذه البناية
         },
         attributes: ['id', 'unitNumber']
       }, {
@@ -239,7 +216,7 @@ const getBuildingById = catchAsync(async (req, res, next) => {
       order: [['startDate', 'DESC']]
     });
     
-    // طلبات الخدمة المعلقة للوحدات المملوكة
+    // ✅ طلبات الخدمة المعلقة للوحدات المملوكة فقط
     const pendingServiceOrders = await ServiceOrder.count({
       where: { status: 'pending' },
       include: [{
@@ -249,15 +226,12 @@ const getBuildingById = catchAsync(async (req, res, next) => {
           model: RealEstateUnit,
           as: 'unit',
           where: { 
-            ownerId: req.user.id,
-            buildingId: building.id 
+            ownerId: req.user.id,        // ✅ فقط وحداتي
+            buildingId: building.id      // ✅ في هذه البناية
           }
         }]
       }]
     });
-    
-    // إضافة المعلومات للاستجابة
-    responseData.ownedUnits = unitsWithCompleteInfo;
     
     additionalInfo = {
       ownerInfo: {

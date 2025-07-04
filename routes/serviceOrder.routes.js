@@ -19,6 +19,9 @@ router.get('/:id', serviceOrderController.getServiceOrderById);
 // Get service order history by ID
 router.get('/:id/history', serviceOrderController.getServiceOrderHistory);
 
+// Get allowed statuses for a service order (NEW ROUTE)
+router.get('/:id/allowed-statuses', serviceOrderController.getAllowedStatusesForServiceOrder);
+
 // Create service order (with attachment upload)
 router.post(
   '/',

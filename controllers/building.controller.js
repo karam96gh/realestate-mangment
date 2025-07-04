@@ -27,27 +27,44 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
     whereCondition.companyId = req.user.companyId;
   } 
   else if (req.user.role === 'owner') {
-    // الحصول على الوحدات المملوكة للمستخدم
+    // ✅ التحقق من أن المستخدم لديه وحدات مملوكة
+    const ownedUnitsCount = await RealEstateUnit.count({
+      where: { ownerId: req.user.id }
+    });
+    
+    if (ownedUnitsCount === 0) {
+      // إذا لم يكن لديه وحدات، إرجاع قائمة فارغة
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        data: [],
+        userStats: {
+          ownedUnitsCount: 0,
+          activeReservationsCount: 0,
+          userType: 'owner'
+        }
+      });
+    }
+    
+    // الحصول على الوحدات المملوكة للمستخدم فقط
     const ownedUnits = await RealEstateUnit.findAll({
       where: { ownerId: req.user.id },
       attributes: ['buildingId'],
       group: ['buildingId']
     });
     
-    if (ownedUnits.length > 0) {
-      // المستخدم مالك - إظهار البنايات التي يملك فيها وحدات
-      const buildingIds = ownedUnits.map(unit => unit.buildingId);
-      whereCondition.id = { [Op.in]: buildingIds };
-      
-      // ✅ إضافة معلومات الوحدات المملوكة فقط في كل بناية
-      includeConditions.push({
-        model: RealEstateUnit,
-        as: 'units',
-        where: { ownerId: req.user.id }, // ✅ فقط الوحدات المملوكة
-        attributes: ['id', 'unitNumber', 'unitType', 'price', 'status'],
-        required: false
-      });
-    }
+    // المستخدم مالك - إظهار البنايات التي يملك فيها وحدات
+    const buildingIds = ownedUnits.map(unit => unit.buildingId);
+    whereCondition.id = { [Op.in]: buildingIds };
+    
+    // ✅ إضافة معلومات الوحدات المملوكة فقط في كل بناية
+    includeConditions.push({
+      model: RealEstateUnit,
+      as: 'units',
+      where: { ownerId: req.user.id }, // ✅ فقط الوحدات المملوكة لهذا المستخدم
+      attributes: ['id', 'unitNumber', 'unitType', 'price', 'status'],
+      required: false
+    });
   }
   else {
     // دور غير معروف
@@ -326,6 +343,8 @@ const getBuildingById = catchAsync(async (req, res, next) => {
     ...additionalInfo
   });
 });
+
+
 
 // تعديل دالة إنشاء المبنى
 const createBuilding = catchAsync(async (req, res, next) => {

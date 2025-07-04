@@ -1,4 +1,4 @@
-// models/user.model.js
+// models/user.model.js - إصلاح إرجاع URLs للصور
 
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
@@ -21,7 +21,7 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING(255),
     allowNull: false
   },
-    copassword: {
+  copassword: {
     type: DataTypes.STRING(255),
     allowNull: true
   },

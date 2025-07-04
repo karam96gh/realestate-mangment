@@ -558,6 +558,67 @@ const updateReservation = catchAsync(async (req, res, next) => {
     data: reservation
   });
 });
+// إضافة دالة deleteReservation في controllers/reservation.controller.js
+
+const deleteReservation = catchAsync(async (req, res, next) => {
+  const reservation = await Reservation.findByPk(req.params.id);
+  
+  if (!reservation) {
+    return next(new AppError('الحجز غير موجود', 404));
+  }
+  
+  console.log('🗑️ حذف الحجز رقم:', reservation.id);
+  console.log('معرف الوحدة:', reservation.unitId);
+  
+  // حذف صورة العقد إذا وجدت
+  if (reservation.contractImage) {
+    const contractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
+    if (fs.existsSync(contractPath)) {
+      fs.unlinkSync(contractPath);
+    }
+  }
+  
+  // حذف ملف العقد PDF إذا وجد
+  if (reservation.contractPdf) {
+    const pdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
+    if (fs.existsSync(pdfPath)) {
+      fs.unlinkSync(pdfPath);
+    }
+  }
+  
+  // حذف صورة شيك التأمين إذا وجدت
+  if (reservation.depositCheckImage) {
+    const depositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
+    if (fs.existsSync(depositCheckPath)) {
+      fs.unlinkSync(depositCheckPath);
+    }
+  }
+  
+  // ***** تحديث حالة الوحدة عند حذف الحجز *****
+  try {
+    console.log('🔄 محاولة تحرير الوحدة عند الحذف...');
+    
+    const unit = await RealEstateUnit.findByPk(reservation.unitId);
+    if (!unit) {
+      console.error('❌ لم يتم العثور على الوحدة');
+    } else {
+      console.log('الحالة الحالية للوحدة:', unit.status);
+      
+      await unit.update({ status: 'available' });
+      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - حذف الحجز ${reservation.id}`);
+    }
+  } catch (error) {
+    console.error('❌ خطأ في تحرير الوحدة عند الحذف:', error);
+    // لا نوقف العملية، فقط نسجل الخطأ
+  }
+  
+  await reservation.destroy();
+  
+  res.status(204).json({
+    status: 'success',
+    data: null
+  });
+});
 // الحصول على الحجوزات حسب معرف الوحدة
 const getReservationsByUnitId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({

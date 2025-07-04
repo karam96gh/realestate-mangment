@@ -94,20 +94,25 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
 });
 
 const getBuildingById = catchAsync(async (req, res, next) => {
+  let includeConditions = [
+    { model: Company, as: 'company' }
+  ];
+  
   const building = await Building.findByPk(req.params.id, {
-    include: [
-      { model: Company, as: 'company' }
-    ]
+    include: includeConditions
   });
   
   if (!building) {
     return next(new AppError('لم يتم العثور على البناية', 404));
   }
   
-  // تحقق إذا كان المستخدم مديرًا أو مستأجرًا له علاقة بهذه البناية
-  if (req.user.role === 'manager' && req.user.companyId !== building.companyId) {
-    return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
-  } else if (req.user.role === 'tenant') {
+  // تحقق من الصلاحيات والوصول
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    if (req.user.companyId !== building.companyId) {
+      return next(new AppError('غير مصرح لك بعرض هذه البناية', 403));
+    }
+  } 
+  else if (req.user.role === 'tenant') {
     // التحقق من وجود حجوزات للمستأجر في هذه البناية
     const hasReservation = await Reservation.findOne({
       where: { userId: req.user.id },
@@ -138,10 +143,213 @@ const getBuildingById = catchAsync(async (req, res, next) => {
       }
     }
   }
+  else if (req.user.role === 'owner') {
+    // التحقق من أن المالك يملك وحدات في هذه البناية
+    const ownedUnitsInBuilding = await RealEstateUnit.count({
+      where: { 
+        ownerId: req.user.id,
+        buildingId: building.id 
+      }
+    });
+    
+    if (ownedUnitsInBuilding === 0) {
+      return next(new AppError('غير مصرح لك بعرض هذه البناية - لا تملك وحدات فيها', 403));
+    }
+  }
+  
+  // إعداد البيانات الأساسية للاستجابة
+  let responseData = building.toJSON();
+  let additionalInfo = {};
+  
+  // إضافة معلومات خاصة للمالك
+  if (req.user.role === 'owner') {
+    // جلب الوحدات المملوكة في هذه البناية مع تفاصيل كاملة
+    const ownedUnits = await RealEstateUnit.findAll({
+      where: { 
+        ownerId: req.user.id,
+        buildingId: building.id 
+      },
+      include: [{
+        model: User,
+        as: 'owner',
+        attributes: ['id', 'fullName', 'email', 'phone'],
+        required: false
+      }],
+      order: [['unitNumber', 'ASC']]
+    });
+    
+    // تحويل بيانات الوحدات لإضافة المعلومات المستخرجة
+    const unitsWithCompleteInfo = ownedUnits.map(unit => {
+      const unitData = unit.toJSON();
+      return {
+        // معلومات الوحدة الأساسية
+        id: unitData.id,
+        unitNumber: unitData.unitNumber,
+        unitType: unitData.unitType,
+        unitLayout: unitData.unitLayout,
+        floor: unitData.floor,
+        area: unitData.area,
+        bathrooms: unitData.bathrooms,
+        parkingNumber: unitData.parkingNumber,
+        price: unitData.price,
+        status: unitData.status,
+        description: unitData.description,
+        
+        // معلومات المالك المستخرجة
+        ownerName: unitData.owner ? unitData.owner.fullName : null,
+        ownerEmail: unitData.owner ? unitData.owner.email : null,
+        ownerPhone: unitData.owner ? unitData.owner.phone : null,
+        
+        // الكائن الأصلي للمرجعية
+        owner: unitData.owner
+      };
+    });
+    
+    // إحصائيات الوحدات المملوكة في هذه البناية
+    const unitStats = {
+      totalOwnedUnits: ownedUnits.length,
+      availableUnits: ownedUnits.filter(unit => unit.status === 'available').length,
+      rentedUnits: ownedUnits.filter(unit => unit.status === 'rented').length,
+      maintenanceUnits: ownedUnits.filter(unit => unit.status === 'maintenance').length,
+      totalRevenue: ownedUnits
+        .filter(unit => unit.status === 'rented')
+        .reduce((sum, unit) => sum + parseFloat(unit.price), 0)
+    };
+    
+    // معلومات الحجوزات النشطة للوحدات المملوكة
+    const activeReservations = await Reservation.findAll({
+      where: {
+        status: { [Op.in]: ['active', 'pending'] }
+      },
+      include: [{
+        model: RealEstateUnit,
+        as: 'unit',
+        where: { 
+          ownerId: req.user.id,
+          buildingId: building.id 
+        },
+        attributes: ['id', 'unitNumber']
+      }, {
+        model: User,
+        as: 'user',
+        attributes: ['id', 'fullName', 'phone', 'email']
+      }],
+      order: [['startDate', 'DESC']]
+    });
+    
+    // طلبات الخدمة المعلقة للوحدات المملوكة
+    const pendingServiceOrders = await ServiceOrder.count({
+      where: { status: 'pending' },
+      include: [{
+        model: Reservation,
+        as: 'reservation',
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          where: { 
+            ownerId: req.user.id,
+            buildingId: building.id 
+          }
+        }]
+      }]
+    });
+    
+    // إضافة المعلومات للاستجابة
+    responseData.ownedUnits = unitsWithCompleteInfo;
+    
+    additionalInfo = {
+      ownerInfo: {
+        buildingStats: unitStats,
+        occupancyRate: unitStats.totalOwnedUnits > 0 ? 
+          ((unitStats.rentedUnits / unitStats.totalOwnedUnits) * 100).toFixed(2) : 0,
+        monthlyRevenue: unitStats.totalRevenue,
+        activeReservations: activeReservations.length,
+        pendingServiceOrders
+      },
+      activeReservationDetails: activeReservations.map(reservation => ({
+        id: reservation.id,
+        unitNumber: reservation.unit.unitNumber,
+        tenantName: reservation.user.fullName,
+        tenantPhone: reservation.user.phone,
+        startDate: reservation.startDate,
+        endDate: reservation.endDate,
+        status: reservation.status
+      }))
+    };
+  }
+  
+  // للمديرين والمحاسبين - إضافة معلومات عامة عن البناية
+  else if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    // إحصائيات عامة للبناية
+    const [
+      totalUnits,
+      availableUnits,
+      rentedUnits,
+      maintenanceUnits,
+      totalRevenue,
+      activeReservations
+    ] = await Promise.all([
+      RealEstateUnit.count({ where: { buildingId: building.id } }),
+      RealEstateUnit.count({ where: { buildingId: building.id, status: 'available' } }),
+      RealEstateUnit.count({ where: { buildingId: building.id, status: 'rented' } }),
+      RealEstateUnit.count({ where: { buildingId: building.id, status: 'maintenance' } }),
+      RealEstateUnit.sum('price', { where: { buildingId: building.id, status: 'rented' } }),
+      Reservation.count({
+        where: { status: { [Op.in]: ['active', 'pending'] } },
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          where: { buildingId: building.id }
+        }]
+      })
+    ]);
+    
+    additionalInfo = {
+      buildingStats: {
+        totalUnits,
+        availableUnits,
+        rentedUnits,
+        maintenanceUnits,
+        occupancyRate: totalUnits > 0 ? ((rentedUnits / totalUnits) * 100).toFixed(2) : 0,
+        monthlyRevenue: totalRevenue || 0,
+        activeReservations
+      }
+    };
+  }
+  
+  // للمستأجرين - إضافة معلومات حجوزاتهم في هذه البناية
+  else if (req.user.role === 'tenant') {
+    const userReservations = await Reservation.findAll({
+      where: { userId: req.user.id },
+      include: [{
+        model: RealEstateUnit,
+        as: 'unit',
+        where: { buildingId: building.id },
+        attributes: ['id', 'unitNumber', 'unitType', 'price']
+      }],
+      order: [['createdAt', 'DESC']]
+    });
+    
+    additionalInfo = {
+      tenantInfo: {
+        reservationsInBuilding: userReservations.length,
+        reservationDetails: userReservations.map(reservation => ({
+          id: reservation.id,
+          unitNumber: reservation.unit.unitNumber,
+          unitType: reservation.unit.unitType,
+          price: reservation.unit.price,
+          startDate: reservation.startDate,
+          endDate: reservation.endDate,
+          status: reservation.status
+        }))
+      }
+    };
+  }
   
   res.status(200).json({
     status: 'success',
-    data: building
+    data: responseData,
+    ...additionalInfo
   });
 });
 

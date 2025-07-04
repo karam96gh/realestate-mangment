@@ -8,9 +8,10 @@ const { validate, buildingValidationRules } = require('../middleware/validation.
 
 // Public routes
 router.use(authMiddleware);
+router.get('/', buildingController.getAllBuildings);
+
 router.use(isAdminOrManagerOrOwner);
 
-router.get('/', buildingController.getAllBuildings);
 router.get('/:id', buildingController.getBuildingById);
 router.get('/company/:companyId', buildingController.getBuildingsByCompanyId);
 

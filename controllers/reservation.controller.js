@@ -1,4 +1,4 @@
-// controllers/reservation.controller.js
+// controllers/reservation.controller.js - مع إضافة معلومات المستأجر الكاملة
 
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
@@ -62,7 +62,7 @@ const getMyReservations = catchAsync(async (req, res) => {
   });
 });
 
-// الحصول على جميع الحجوزات
+// الحصول على جميع الحجوزات مع معلومات المستأجر الكاملة
 const getAllReservations = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الحجوزات
   if(req.user.role === 'tenant') {
@@ -71,7 +71,16 @@ const getAllReservations = catchAsync(async (req, res, next) => {
   
   let whereCondition = {};
   let includeOptions = [
-    { model: User, as: 'user', attributes: { exclude: ['password'] } },
+    { 
+      model: User, 
+      as: 'user', 
+      attributes: { exclude: ['password'] }, // استبعاد كلمة المرور فقط
+      include: [{
+        model: Tenant,
+        as: 'tenantInfo', // تضمين معلومات المستأجر الكاملة
+        required: false // left join للحالات التي قد لا يكون فيها tenant info
+      }]
+    },
     { 
       model: RealEstateUnit, 
       as: 'unit',
@@ -84,7 +93,7 @@ const getAllReservations = catchAsync(async (req, res, next) => {
   ];
   
   // إذا كان المستخدم مديرًا، يُظهر فقط حجوزات شركته
-  if (req.user.role === 'manager'||req.user.role==='accountant') {
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
@@ -119,11 +128,20 @@ const getAllReservations = catchAsync(async (req, res, next) => {
   });
 });
 
-// الحصول على حجز حسب المعرف
+// الحصول على حجز حسب المعرف مع معلومات المستأجر الكاملة
 const getReservationById = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id, {
     include: [
-      { model: User, as: 'user' },
+      { 
+        model: User, 
+        as: 'user',
+        attributes: { exclude: ['password'] }, // استبعاد كلمة المرور فقط
+        include: [{
+          model: Tenant,
+          as: 'tenantInfo', // تضمين معلومات المستأجر الكاملة
+          required: false
+        }]
+      },
       { 
         model: RealEstateUnit, 
         as: 'unit',
@@ -157,10 +175,6 @@ const getReservationById = catchAsync(async (req, res, next) => {
     data: reservation
   });
 });
-
-// إنشاء حجز جديد
-// إنشاء حجز جديد مع إنشاء مستأجر جديد
-// controllers/reservation.controller.js - تحديث دوال إنشاء وتحديث الحجز لحقول التأمين
 
 // إنشاء حجز جديد مع حقول التأمين المحدثة
 const createReservation = catchAsync(async (req, res, next) => {
@@ -350,7 +364,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     // Create file URLs
     const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
     
-    // Prepare response data
+    // Prepare response data مع معلومات المستأجر الكاملة
     const responseData = {
       reservation: {
         ...newReservation.get({ plain: true }),
@@ -362,8 +376,8 @@ const createReservation = catchAsync(async (req, res, next) => {
       tenant: {
         ...tenant.get({ plain: true }),
         user: {
-          ...user.toJSON(),
-          rawPassword: password
+          ...user.toJSON(), // يستبعد كلمة المرور تلقائياً
+          rawPassword: password // كلمة المرور النصية فقط عند الإنشاء
         }
       },
       paymentSchedule: createdPayments.map(payment => payment.toJSON())
@@ -399,14 +413,6 @@ const createReservation = catchAsync(async (req, res, next) => {
 });
 
 // تحديث حجز مع حقول التأمين
-// تحديث دالة updateReservation في controllers/reservation.controller.js
-
-// تحديث حجز مع حقول التأمين
-
-// استبدال دالة updateReservation في controllers/reservation.controller.js
-
-// إصلاح دالة updateReservation في controllers/reservation.controller.js
-
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -428,8 +434,20 @@ const updateReservation = catchAsync(async (req, res, next) => {
     notes
   } = req.body;
   
-  // التحقق من وجود الحجز
-  const reservation = await Reservation.findByPk(req.params.id);
+  // التحقق من وجود الحجز مع معلومات المستأجر
+  const reservation = await Reservation.findByPk(req.params.id, {
+    include: [{
+      model: User,
+      as: 'user',
+      attributes: { exclude: ['password'] },
+      include: [{
+        model: Tenant,
+        as: 'tenantInfo',
+        required: false
+      }]
+    }]
+  });
+  
   if (!reservation) {
     return next(new AppError('الحجز غير موجود', 404));
   }
@@ -530,7 +548,6 @@ const updateReservation = catchAsync(async (req, res, next) => {
   await reservation.update(updateData);
   
   // ***** تحديث حالة الوحدة عند تغيير حالة الحجز *****
-  // استخدام الحالة الأصلية للمقارنة، وليس الحالة بعد التحديث
   if (status && (status === 'cancelled' || status === 'expired') && originalStatus === 'active') {
     try {
       console.log('🔄 محاولة تحديث حالة الوحدة...');
@@ -558,8 +575,8 @@ const updateReservation = catchAsync(async (req, res, next) => {
     data: reservation
   });
 });
-// إضافة دالة deleteReservation في controllers/reservation.controller.js
 
+// حذف حجز
 const deleteReservation = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id);
   
@@ -619,12 +636,22 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     data: null
   });
 });
-// الحصول على الحجوزات حسب معرف الوحدة
+
+// الحصول على الحجوزات حسب معرف الوحدة مع معلومات المستأجر
 const getReservationsByUnitId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({
     where: { unitId: req.params.unitId },
     include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } }
+      { 
+        model: User, 
+        as: 'user', 
+        attributes: { exclude: ['password'] },
+        include: [{
+          model: Tenant,
+          as: 'tenantInfo',
+          required: false
+        }]
+      }
     ]
   });
   
@@ -640,7 +667,10 @@ const getReservationsByUserId = catchAsync(async (req, res) => {
   const reservations = await Reservation.findAll({
     where: { userId: req.params.userId },
     include: [
-      { model: RealEstateUnit, as: 'unit' }
+      { 
+        model: RealEstateUnit, 
+        as: 'unit' 
+      }
     ]
   });
   

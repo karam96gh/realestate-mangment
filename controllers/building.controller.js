@@ -3,6 +3,8 @@ const Building = require('../models/building.model');
 const Company = require('../models/company.model');
 const RealEstateUnit = require('../models/realEstateUnit.model');
 const Reservation = require('../models/reservation.model');
+const ServiceOrder = require('../models/serviceOrder.model');
+
 const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');

@@ -17,7 +17,7 @@ const getAllBuildings = catchAsync(async (req, res, next) => {
     // Admin يمكنه رؤية جميع البنايات
     // لا توجد قيود
   } 
-  else if (req.user.role === 'manager') {
+  else if (req.user.role === 'manager'||req.user.role === 'accountant') {
     // المدير يرى فقط بنايات شركته
     if (!req.user.companyId) {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));

@@ -1,4 +1,4 @@
-// controllers/expense.controller.js - النسخة المحدثة
+// controllers/expense.controller.js - النسخة الكاملة
 
 const Expense = require('../models/expense.model');
 const RealEstateUnit = require('../models/realEstateUnit.model');
@@ -120,6 +120,279 @@ const getAllExpenses = catchAsync(async (req, res, next) => {
     status: 'success',
     results: expenses.length,
     data: expenses
+  });
+});
+
+// الحصول على مصروف حسب المعرف
+const getExpenseById = catchAsync(async (req, res, next) => {
+  const expense = await Expense.findByPk(req.params.id, {
+    include: [
+      { 
+        model: Building, 
+        as: 'building',
+        include: [{ model: Company, as: 'company' }]
+      },
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        required: false
+      },
+      {
+        model: ServiceOrder,
+        as: 'serviceOrder',
+        required: false
+      }
+    ]
+  });
+
+  if (!expense) {
+    return next(new AppError('لم يتم العثور على المصروف', 404));
+  }
+
+  // التحقق من الصلاحيات
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    if (expense.building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بعرض هذا المصروف', 403));
+    }
+  } else if (req.user.role === 'owner') {
+    if (expense.responsibleParty !== 'owner') {
+      return next(new AppError('غير مصرح لك بعرض هذا المصروف', 403));
+    }
+    // التحقق من ملكية الوحدة أو المبنى
+    if (expense.unitId) {
+      const unit = await RealEstateUnit.findByPk(expense.unitId);
+      if (!unit || unit.ownerId !== req.user.id) {
+        return next(new AppError('غير مصرح لك بعرض هذا المصروف', 403));
+      }
+    }
+  } else if (req.user.role === 'tenant') {
+    if (expense.responsibleParty !== 'tenant') {
+      return next(new AppError('غير مصرح لك بعرض هذا المصروف', 403));
+    }
+    // التحقق من الحجز النشط
+    const hasActiveReservation = await Reservation.findOne({
+      where: { 
+        userId: req.user.id,
+        unitId: expense.unitId,
+        status: 'active'
+      }
+    });
+    if (!hasActiveReservation) {
+      return next(new AppError('غير مصرح لك بعرض هذا المصروف', 403));
+    }
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: expense
+  });
+});
+
+// الحصول على مصاريف مبنى معين
+const getExpensesByBuildingId = catchAsync(async (req, res, next) => {
+  const buildingId = req.params.buildingId;
+  
+  // التحقق من وجود المبنى
+  const building = await Building.findByPk(buildingId);
+  if (!building) {
+    return next(new AppError('المبنى غير موجود', 404));
+  }
+
+  // التحقق من الصلاحيات
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    if (building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بعرض مصاريف هذا المبنى', 403));
+    }
+  }
+
+  let whereCondition = { buildingId };
+  
+  // إضافة فلترة حسب المسؤول عن الدفع للمالكين والمستأجرين
+  if (req.user.role === 'owner') {
+    whereCondition.responsibleParty = 'owner';
+  } else if (req.user.role === 'tenant') {
+    whereCondition.responsibleParty = 'tenant';
+  }
+
+  const expenses = await Expense.findAll({
+    where: whereCondition,
+    include: [
+      { 
+        model: Building, 
+        as: 'building',
+        include: [{ model: Company, as: 'company' }]
+      },
+      { 
+        model: RealEstateUnit, 
+        as: 'unit',
+        required: false
+      }
+    ],
+    order: [['expenseDate', 'DESC']]
+  });
+
+  res.status(200).json({
+    status: 'success',
+    results: expenses.length,
+    data: expenses
+  });
+});
+
+// الحصول على مصاريف وحدة معينة
+const getExpensesByUnitId = catchAsync(async (req, res, next) => {
+  const unitId = req.params.unitId;
+
+  // التحقق من وجود الوحدة
+  const unit = await RealEstateUnit.findByPk(unitId, {
+    include: [{
+      model: Building,
+      as: 'building'
+    }]
+  });
+
+  if (!unit) {
+    return next(new AppError('الوحدة غير موجودة', 404));
+  }
+
+  // التحقق من الصلاحيات
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    if (unit.building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بعرض مصاريف هذه الوحدة', 403));
+    }
+  } else if (req.user.role === 'owner') {
+    if (unit.ownerId !== req.user.id) {
+      return next(new AppError('غير مصرح لك بعرض مصاريف هذه الوحدة', 403));
+    }
+  }
+
+  let whereCondition = { unitId };
+  
+  // إضافة فلترة حسب المسؤول عن الدفع
+  if (req.user.role === 'owner') {
+    whereCondition.responsibleParty = 'owner';
+  } else if (req.user.role === 'tenant') {
+    whereCondition.responsibleParty = 'tenant';
+  }
+
+  const expenses = await Expense.findAll({
+    where: whereCondition,
+    order: [['expenseDate', 'DESC']]
+  });
+
+  res.status(200).json({
+    status: 'success',
+    results: expenses.length,
+    data: expenses
+  });
+});
+
+// إحصائيات المصاريف
+const getExpenseStatistics = catchAsync(async (req, res, next) => {
+  let whereCondition = {};
+
+  // فلترة حسب صلاحيات المستخدم
+  if (req.user.role === 'manager' || req.user.role === 'accountant') {
+    if (!req.user.companyId) {
+      return next(new AppError('المستخدم غير مرتبط بأي شركة', 403));
+    }
+    
+    const companyBuildings = await Building.findAll({
+      where: { companyId: req.user.companyId },
+      attributes: ['id']
+    });
+    
+    const buildingIds = companyBuildings.map(building => building.id);
+    whereCondition.buildingId = { [Op.in]: buildingIds };
+  } else if (req.user.role === 'owner') {
+    const ownedUnits = await RealEstateUnit.findAll({
+      where: { ownerId: req.user.id },
+      attributes: ['id', 'buildingId']
+    });
+    
+    const ownedBuildingIds = [...new Set(ownedUnits.map(unit => unit.buildingId))];
+    const ownedUnitIds = ownedUnits.map(unit => unit.id);
+    
+    whereCondition = {
+      [Op.and]: [
+        {
+          [Op.or]: [
+            { buildingId: { [Op.in]: ownedBuildingIds } },
+            { unitId: { [Op.in]: ownedUnitIds } }
+          ]
+        },
+        { responsibleParty: 'owner' }
+      ]
+    };
+  } else if (req.user.role === 'tenant') {
+    const userReservations = await Reservation.findAll({
+      where: { 
+        userId: req.user.id,
+        status: 'active'
+      },
+      attributes: ['unitId'],
+      include: [{
+        model: RealEstateUnit,
+        as: 'unit',
+        attributes: ['buildingId']
+      }]
+    });
+    
+    const tenantUnitIds = userReservations.map(res => res.unitId);
+    const tenantBuildingIds = [...new Set(userReservations.map(res => res.unit.buildingId))];
+    
+    whereCondition = {
+      [Op.and]: [
+        {
+          [Op.or]: [
+            { buildingId: { [Op.in]: tenantBuildingIds } },
+            { unitId: { [Op.in]: tenantUnitIds } }
+          ]
+        },
+        { responsibleParty: 'tenant' }
+      ]
+    };
+  }
+
+  // إجمالي المصاريف
+  const totalExpenses = await Expense.sum('amount', { where: whereCondition });
+
+  // المصاريف حسب النوع
+  const expensesByType = await Expense.findAll({
+    attributes: [
+      'expenseType',
+      [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount']
+    ],
+    where: whereCondition,
+    group: ['expenseType'],
+    raw: true
+  });
+
+  // المصاريف حسب الشهر (آخر 6 شهور)
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+  const expensesByMonth = await Expense.findAll({
+    attributes: [
+      [sequelize.fn('DATE_FORMAT', sequelize.col('expenseDate'), '%Y-%m'), 'month'],
+      [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount']
+    ],
+    where: {
+      ...whereCondition,
+      expenseDate: { [Op.gte]: sixMonthsAgo }
+    },
+    group: [sequelize.fn('DATE_FORMAT', sequelize.col('expenseDate'), '%Y-%m')],
+    order: [[sequelize.fn('DATE_FORMAT', sequelize.col('expenseDate'), '%Y-%m'), 'DESC']],
+    raw: true
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      totalExpenses: totalExpenses || 0,
+      expensesByType,
+      expensesByMonth
+    }
   });
 });
 
@@ -369,7 +642,7 @@ const getCompletedServiceOrdersForExpense = catchAsync(async (req, res, next) =>
   });
 });
 
-// باقي الدوال (تحديث، حذف، إحصائيات)
+// تحديث مصروف
 const updateExpense = catchAsync(async (req, res, next) => {
   // فقط المسؤولون والمديرون والمحاسبون يمكنهم تحديث المصاريف
   if (!['admin', 'manager', 'accountant'].includes(req.user.role)) {
@@ -421,6 +694,7 @@ const updateExpense = catchAsync(async (req, res, next) => {
   });
 });
 
+// حذف مصروف
 const deleteExpense = catchAsync(async (req, res, next) => {
   // فقط المسؤولون والمديرون يمكنهم حذف المصاريف
   if (!['admin', 'manager'].includes(req.user.role)) {
@@ -459,6 +733,10 @@ const deleteExpense = catchAsync(async (req, res, next) => {
 
 module.exports = {
   getAllExpenses,
+  getExpenseById,
+  getExpensesByBuildingId,
+  getExpensesByUnitId,
+  getExpenseStatistics,
   createExpense,
   createExpenseFromServiceOrder,
   getCompletedServiceOrdersForExpense,

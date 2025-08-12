@@ -4,6 +4,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
+const { scheduleContractExpiration, runOnStartup } = require('./utils/contractExpiration');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -61,6 +62,8 @@ app.get('/', (req, res) => {
 
 // Error handling middleware
 app.use(errorHandler);
+  runOnStartup();
+scheduleContractExpiration();
 
 // Start the server
 app.listen(PORT, () => {

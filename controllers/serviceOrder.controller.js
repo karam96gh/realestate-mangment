@@ -5,11 +5,273 @@ const RealEstateUnit = require('../models/realEstateUnit.model');
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
-const { validateStatusTransition, canEditServiceOrder, getAllowedNextStatuses, getStatusDescription } = require('../utils/serviceOrderStatusHelper');
+const { validateStatusTransition } = require('../utils/serviceOrderStatusHelper');
 const fs = require('fs');
 const path = require('path');
 const { UPLOAD_PATHS } = require('../config/upload');
 const { Op } = require('sequelize');
+
+// تحديث طلب الخدمة مع إضافة سعر الخدمة والمرفقات
+const updateServiceOrder = catchAsync(async (req, res, next) => {
+  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
+  
+  if (!serviceOrder) {
+    return next(new AppError('طلب الخدمة غير موجود', 404));
+  }
+
+  const { 
+    serviceType, 
+    serviceSubtype, 
+    description, 
+    status,
+    servicePrice,
+    completionDescription
+  } = req.body;
+
+  // التحقق من صحة تحول الحالة إذا تم تمريرها
+  if (status && status !== serviceOrder.status) {
+    const transitionValidation = validateStatusTransition(serviceOrder.status, status);
+    if (!transitionValidation.isValid) {
+      return next(new AppError(transitionValidation.message, 400));
+    }
+  }
+
+  // معالجة المرفقات
+  let attachmentFile = serviceOrder.attachmentFile;
+  let completionAttachment = serviceOrder.completionAttachment;
+
+  if (req.files) {
+    // المرفق العادي
+    if (req.files.attachmentFile && req.files.attachmentFile[0]) {
+      // حذف المرفق القديم
+      if (serviceOrder.attachmentFile) {
+        const oldPath = path.join(UPLOAD_PATHS.attachments, serviceOrder.attachmentFile);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+      attachmentFile = req.files.attachmentFile[0].filename;
+    }
+
+    // مرفق الإكمال/الإلغاء
+    if (req.files.completionAttachment && req.files.completionAttachment[0]) {
+      // حذف المرفق القديم
+      if (serviceOrder.completionAttachment) {
+        const oldPath = path.join(UPLOAD_PATHS.attachments, serviceOrder.completionAttachment);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+      completionAttachment = req.files.completionAttachment[0].filename;
+    }
+  } else if (req.file) {
+    // للتوافق مع الطريقة القديمة
+    if (serviceOrder.attachmentFile) {
+      const oldPath = path.join(UPLOAD_PATHS.attachments, serviceOrder.attachmentFile);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+    attachmentFile = req.file.filename;
+  }
+
+  // إعداد البيانات للتحديث
+  const updateData = {
+    serviceType: serviceType || serviceOrder.serviceType,
+    serviceSubtype: serviceSubtype || serviceOrder.serviceSubtype,
+    description: description || serviceOrder.description,
+    attachmentFile
+  };
+
+  // إضافة سعر الخدمة والمرفقات عند الإكمال أو الإلغاء
+  if (status && ['completed', 'rejected'].includes(status)) {
+    // التحقق من وجود سعر الخدمة للحالات المكتملة أو الملغاة
+    if (!servicePrice) {
+      return next(new AppError('سعر الخدمة مطلوب عند إكمال أو إلغاء الطلب', 400));
+    }
+
+    // التحقق من وجود مرفق الإكمال لمسؤول الصيانة والمحاسب
+    if (['maintenance', 'accountant'].includes(req.user.role) && !completionAttachment) {
+      return next(new AppError('مرفق الإكمال مطلوب', 400));
+    }
+
+    updateData.servicePrice = servicePrice;
+    updateData.completionAttachment = completionAttachment;
+    updateData.completionDescription = completionDescription;
+  }
+
+  // إضافة سجل جديد للتاريخ فقط إذا تغيرت الحالة
+  if (status && status !== serviceOrder.status) {
+    let currentHistory = serviceOrder.serviceHistory || [];
+    
+    const newHistoryEntry = {
+      status: status,
+      date: new Date().toISOString(),
+      changedBy: req.user.id,
+      changedByRole: req.user.role,
+      changedByName: req.user.fullName || req.user.email,
+      servicePrice: status === 'completed' ? servicePrice : undefined,
+      completionDescription: ['completed', 'rejected'].includes(status) ? completionDescription : undefined
+    };
+    
+    updateData.status = status;
+    updateData.serviceHistory = [...currentHistory, newHistoryEntry];
+  }
+
+  // تحديث طلب الخدمة
+  await serviceOrder.update(updateData);
+  
+  // إعادة جلب السجل مع السجل التاريخي المحدث
+  const updatedServiceOrder = await ServiceOrder.findByPk(serviceOrder.id, {
+    include: [
+      { model: User, as: 'user', attributes: { exclude: ['password'] } },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [{
+          model: RealEstateUnit,
+          as: 'unit',
+          include: [{
+            model: Building,
+            as: 'building',
+            include: [{ model: Company, as: 'company' }]
+          }]
+        }]
+      }
+    ]
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    data: updatedServiceOrder
+  });
+});
+
+// الحصول على طلبات الخدمة المكتملة للمحاسب
+const getCompletedServiceOrdersForAccountant = catchAsync(async (req, res, next) => {
+  // فقط المحاسبون يمكنهم الوصول لهذه البيانات
+  if (req.user.role !== 'accountant') {
+    return next(new AppError('غير مصرح لك بهذه العملية', 403));
+  }
+
+  if (!req.user.companyId) {
+    return next(new AppError('المحاسب غير مرتبط بأي شركة', 403));
+  }
+
+  // فلترة حسب نوع الطلبات المطلوبة
+  const { showExpenseCreated } = req.query;
+  let expenseFilter = {};
+  
+  if (showExpenseCreated === 'true') {
+    expenseFilter.isExpenseCreated = true;
+  } else if (showExpenseCreated === 'false') {
+    expenseFilter.isExpenseCreated = false;
+  }
+
+  const completedServiceOrders = await ServiceOrder.findAll({
+    where: {
+      status: 'completed',
+      servicePrice: { [Op.ne]: null },
+      ...expenseFilter
+    },
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'fullName', 'phone', 'email'] },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'fullName', 'phone', 'email']
+          },
+          {
+            model: RealEstateUnit,
+            as: 'unit',
+            include: [{
+              model: Building,
+              as: 'building',
+              where: { companyId: req.user.companyId },
+              include: [{ model: Company, as: 'company' }]
+            }]
+          }
+        ]
+      }
+    ],
+    order: [['updatedAt', 'DESC']]
+  });
+
+  res.status(200).json({
+    status: 'success',
+    results: completedServiceOrders.length,
+    data: completedServiceOrders
+  });
+});
+
+// الحصول على تفاصيل طلب خدمة مكتمل للمحاسب (لإنشاء مصروف)
+const getServiceOrderForExpenseCreation = catchAsync(async (req, res, next) => {
+  // فقط المحاسبون يمكنهم الوصول لهذه البيانات
+  if (req.user.role !== 'accountant') {
+    return next(new AppError('غير مصرح لك بهذه العملية', 403));
+  }
+
+  const serviceOrderId = req.params.id;
+
+  const serviceOrder = await ServiceOrder.findByPk(serviceOrderId, {
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'fullName', 'phone', 'email'] },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'fullName', 'phone', 'email']
+          },
+          {
+            model: RealEstateUnit,
+            as: 'unit',
+            include: [
+              {
+                model: User,
+                as: 'owner',
+                attributes: ['id', 'fullName', 'phone', 'email']
+              },
+              {
+                model: Building,
+                as: 'building',
+                include: [{ model: Company, as: 'company' }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  if (!serviceOrder) {
+    return next(new AppError('طلب الخدمة غير موجود', 404));
+  }
+
+  // التحقق من الصلاحيات
+  if (serviceOrder.reservation.unit.building.companyId !== req.user.companyId) {
+    return next(new AppError('غير مصرح لك بهذا الطلب', 403));
+  }
+
+  if (serviceOrder.status !== 'completed') {
+    return next(new AppError('يمكن إنشاء مصروف فقط من طلبات الخدمة المكتملة', 400));
+  }
+
+  if (serviceOrder.isExpenseCreated) {
+    return next(new AppError('تم إنشاء مصروف لهذا الطلب مسبقاً', 400));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: serviceOrder
+  });
+});
 
 // Get all service orders
 const getAllServiceOrders = catchAsync(async (req, res, next) => {
@@ -241,152 +503,6 @@ const createServiceOrder = catchAsync(async (req, res, next) => {
   });
 });
 
-// Update service order
-const updateServiceOrder = catchAsync(async (req, res, next) => {
-  const serviceOrder = await ServiceOrder.findByPk(req.params.id);
-  
-  if (!serviceOrder) {
-    return next(new AppError('طلب الخدمة غير موجود', 404));
-  }
-  
-  // التحقق من صلاحيات التعديل
-  const editPermissions = canEditServiceOrder(serviceOrder.status, req.user.role);
-  
-  if (!editPermissions.canEdit) {
-    return next(new AppError(editPermissions.message, 403));
-  }
-  
-  // التحقق من صلاحيات المستأجر
-  if (req.user.role === 'tenant') {
-    if (serviceOrder.userId !== req.user.id) {
-      return next(new AppError('يمكنك تحديث طلبات الخدمة الخاصة بك فقط', 403));
-    }
-    
-    if (!editPermissions.canEditDescription && req.body.description) {
-      return next(new AppError('يمكنك تحديث وصف الطلبات في انتظار المعالجة فقط', 403));
-    }
-    
-    if (req.body.status && !editPermissions.canEditStatus) {
-      return next(new AppError('المستأجرون لا يمكنهم تحديث حالة طلبات الخدمة', 403));
-    }
-  }
-  
-  // التحقق من صلاحيات المدير أو عامل الصيانة أو المحاسب
-  if (['manager', 'maintenance', 'accountant'].includes(req.user.role)) {
-    // الحصول على معلومات الشركة لطلب الخدمة
-    const serviceOrderWithCompany = await ServiceOrder.findByPk(req.params.id, {
-      include: [{
-        model: Reservation,
-        as: 'reservation',
-        include: [{
-          model: RealEstateUnit,
-          as: 'unit',
-          include: [{
-            model: Building,
-            as: 'building'
-          }]
-        }]
-      }]
-    });
-    
-    const companyId = serviceOrderWithCompany.reservation.unit.building.companyId;
-    
-    if (!req.user.companyId || req.user.companyId !== companyId) {
-      return next(new AppError('غير مصرح لك بتحديث طلب الخدمة هذا', 403));
-    }
-    
-    // التحقق من نوع الخدمة حسب دور المستخدم
-    if (req.user.role === 'maintenance' && serviceOrder.serviceType !== 'maintenance') {
-      return next(new AppError('غير مصرح لك بتحديث هذا النوع من طلبات الخدمة', 403));
-    }
-    
-    if (req.user.role === 'accountant' && serviceOrder.serviceType !== 'financial') {
-      return next(new AppError('غير مصرح لك بتحديث هذا النوع من طلبات الخدمة', 403));
-    }
-  }
-  
-  // التحقق من صحة الحالة الجديدة إذا تم تمريرها
-  if (req.body.status) {
-    const validStatuses = ['pending', 'in-progress', 'completed', 'rejected'];
-    if (!validStatuses.includes(req.body.status)) {
-      return next(new AppError('قيمة الحالة غير صحيحة', 400));
-    }
-    
-    // التحقق من صحة تحول الحالة
-    const transitionValidation = validateStatusTransition(serviceOrder.status, req.body.status);
-    if (!transitionValidation.isValid) {
-      return next(new AppError(transitionValidation.message, 400));
-    }
-  }
-  
-  const { serviceType, serviceSubtype, description, status } = req.body;
-  
-  // Handle attachment upload if provided
-  let attachmentFile = serviceOrder.attachmentFile;
-  if (req.file) {
-    // Delete old attachment if it exists
-    if (serviceOrder.attachmentFile) {
-      const oldAttachmentPath = path.join(UPLOAD_PATHS.attachments, serviceOrder.attachmentFile);
-      if (fs.existsSync(oldAttachmentPath)) {
-        fs.unlinkSync(oldAttachmentPath);
-      }
-    }
-    attachmentFile = req.file.filename;
-  }
-  
-  // إعداد البيانات للتحديث
-  const updateData = {
-    serviceType: serviceType || serviceOrder.serviceType,
-    serviceSubtype: serviceSubtype || serviceOrder.serviceSubtype,
-    description: description || serviceOrder.description,
-    attachmentFile
-  };
-  
-  // إضافة سجل جديد للتاريخ فقط إذا تغيرت الحالة
-  if (status && status !== serviceOrder.status) {
-    let currentHistory = serviceOrder.serviceHistory || [];
-    
-    // إضافة السجل الجديد
-    const newHistoryEntry = {
-      status: status,
-      date: new Date().toISOString(),
-      changedBy: req.user.id,
-      changedByRole: req.user.role,
-      changedByName: req.user.name || req.user.email
-    };
-    
-    updateData.status = status;
-    updateData.serviceHistory = [...currentHistory, newHistoryEntry];
-  }
-  
-  // Update service order
-  await serviceOrder.update(updateData);
-  
-  // إعادة جلب السجل مع السجل التاريخي المحدث
-  const updatedServiceOrder = await ServiceOrder.findByPk(serviceOrder.id, {
-    include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } },
-      { 
-        model: Reservation, 
-        as: 'reservation',
-        include: [{
-          model: RealEstateUnit,
-          as: 'unit',
-          include: [{
-            model: Building,
-            as: 'building',
-            include: [{ model: Company, as: 'company' }]
-          }]
-        }]
-      }
-    ]
-  });
-  
-  res.status(200).json({
-    status: 'success',
-    data: updatedServiceOrder
-  });
-});
 
 // Delete service order
 const deleteServiceOrder = catchAsync(async (req, res, next) => {
@@ -700,5 +816,7 @@ module.exports = {
   getServiceOrdersByReservationId,
   getServiceOrderHistory,
   getAllowedStatusesForServiceOrder,
-  getServiceOrderStats
+  getServiceOrderStats,
+   getCompletedServiceOrdersForAccountant,
+  getServiceOrderForExpenseCreation
 };

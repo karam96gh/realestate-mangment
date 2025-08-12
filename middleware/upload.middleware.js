@@ -1,118 +1,199 @@
-// Upload middleware 
+// middleware/upload.middleware.js - محدث لدعم مرفقات المصاريف
+
 const multer = require('multer');
-const { contractUpload, identityUpload, checkUpload, attachmentUpload, logoUpload } = require('../config/upload');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const { UPLOAD_PATHS } = require('../config/upload');
 
-// Single file upload handlers
-const uploadContractImage = contractUpload.single('contractImage');
-const uploadIdentityImage = identityUpload.single('identityImage');
-const uploadCommercialRegisterImage = identityUpload.single('commercialRegisterImage');
-const uploadCheckImage = checkUpload.single('checkImage');
-const uploadAttachment = attachmentUpload.single('attachmentFile');
-const uploadLogo = logoUpload.single('logoImage');
-// Add this to middleware/upload.middleware.js
+// إعداد التخزين للمرفقات العامة
+const attachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_PATHS.attachments);
+  },
+  filename: (req, file, cb) => {
+    const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;
+    cb(null, uniqueFileName);
+  }
+});
 
-// Multiple files upload handler for reservations
-// const uploadReservationFiles = (req, res, next) => {
-//   const upload = multer({
-//     storage: multer.diskStorage({
-//       destination: (req, file, cb) => {
-//         let uploadPath;
-//         if (file.fieldname === 'contractImage') {
-//           uploadPath = UPLOAD_PATHS.contracts;
-//         } else if (file.fieldname === 'identityImage' || file.fieldname === 'commercialRegisterImage') {
-//           uploadPath = UPLOAD_PATHS.identities;
-//         } else {
-//           uploadPath = UPLOAD_PATHS.attachments; // Default
-//         }
-//         cb(null, uploadPath);
-//       },
-//       filename: (req, file, cb) => {
-//         const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;
-//         cb(null, uniqueFileName);
-//       }
-//     }),
-//     limits: {
-//       fileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || 5 * 1024 * 1024 // Default to 5MB
-//     },
-//     fileFilter: (req, file, cb) => {
-//       const allowedMimeTypes = [
-//         'image/jpeg',
-//         'image/png',
-//         'image/gif',
-//         'application/pdf'
-//       ];
-      
-//       if (allowedMimeTypes.includes(file.mimetype)) {
-//         cb(null, true);
-//       } else {
-//         cb(new Error('Invalid file type. Only JPEG, PNG, GIF and PDF are allowed.'), false);
-//       }
-//     }
-//   }).fields([
-//     { name: 'contractImage', maxCount: 1 },
-//     { name: 'identityImage', maxCount: 1 },
-//     { name: 'commercialRegisterImage', maxCount: 1 }
-//   ]);
+// إعداد التخزين المتعدد للملفات
+const multiFieldStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    let destination = UPLOAD_PATHS.attachments; // افتراضي
+    
+    // تحديد المجلد حسب نوع الملف
+    switch (file.fieldname) {
+      case 'attachmentFile':
+      case 'completionAttachment':
+      case 'expenseAttachment':
+        destination = UPLOAD_PATHS.attachments;
+        break;
+      case 'contractImage':
+      case 'contractPdf':
+        destination = UPLOAD_PATHS.contracts;
+        break;
+      case 'identityImageFront':
+      case 'identityImageBack':
+        destination = UPLOAD_PATHS.identities;
+        break;
+      case 'checkImage':
+        destination = UPLOAD_PATHS.checks;
+        break;
+      default:
+        destination = UPLOAD_PATHS.attachments;
+    }
+    
+    cb(null, destination);
+  },
+  filename: (req, file, cb) => {
+    const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;
+    cb(null, uniqueFileName);
+  }
+});
 
-//   upload(req, res, (err) => {
-//     if (err) return handleUploadError(err, req, res, next);
-//     next();
-//   });
-// };
+// فلتر الملفات
+const fileFilter = (req, file, cb) => {
+  const allowedMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain'
+  ];
+  
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`نوع الملف غير مقبول: ${file.mimetype}. الأنواع المسموحة: JPEG, PNG, GIF, PDF, Word, Excel, Text`), false);
+  }
+};
 
-
-// Handle multer errors
+// معالجة أخطاء الرفع
 const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ message: 'File is too large' });
+      return res.status(400).json({ 
+        status: 'fail',
+        message: 'حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت' 
+      });
     }
-    return res.status(400).json({ message: err.message });
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ 
+        status: 'fail',
+        message: `حقل ملف غير متوقع: ${err.field}` 
+      });
+    }
+    return res.status(400).json({ 
+      status: 'fail',
+      message: err.message 
+    });
   } else if (err) {
-    return res.status(400).json({ message: err.message });
+    return res.status(400).json({ 
+      status: 'fail',
+      message: err.message 
+    });
   }
   next();
 };
 
-// Middleware wrappers to handle errors
-const uploadMiddleware = {
-  contractImage: (req, res, next) => {
-    uploadContractImage(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
-  },
-  identityImage: (req, res, next) => {
-    uploadIdentityImage(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
-  },
-  commercialRegisterImage: (req, res, next) => {
-    uploadCommercialRegisterImage(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
-  },
-  checkImage: (req, res, next) => {
-    uploadCheckImage(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
-  },
-  attachmentFile: (req, res, next) => {
-    uploadAttachment(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
-  },
-  logoImage: (req, res, next) => {
-    uploadLogo(req, res, (err) => {
-      if (err) return handleUploadError(err, req, res, next);
-      next();
-    });
+// إعداد multer للمرفقات المفردة
+const singleAttachmentUpload = multer({
+  storage: attachmentStorage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10 ميجابايت
   }
+});
+
+// إعداد multer للملفات المتعددة
+const multiFieldUpload = multer({
+  storage: multiFieldStorage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10 ميجابايت
+  }
+});
+
+// وسطاء رفع الملفات
+
+// للمصاريف - ملف مرفق واحد
+const uploadExpenseAttachment = (req, res, next) => {
+  singleAttachmentUpload.single('attachmentFile')(req, res, (err) => {
+    if (err) return handleUploadError(err, req, res, next);
+    next();
+  });
 };
 
-// Export the new middleware
-module.exports = uploadMiddleware;
+// لطلبات الخدمة - ملفات متعددة
+const uploadServiceOrderFiles = (req, res, next) => {
+  multiFieldUpload.fields([
+    { name: 'attachmentFile', maxCount: 1 },
+    { name: 'completionAttachment', maxCount: 1 }
+  ])(req, res, (err) => {
+    if (err) return handleUploadError(err, req, res, next);
+    next();
+  });
+};
+
+// للمرفقات العامة - ملف واحد
+const uploadSingleAttachment = (req, res, next) => {
+  singleAttachmentUpload.single('attachmentFile')(req, res, (err) => {
+    if (err) return handleUploadError(err, req, res, next);
+    next();
+  });
+};
+
+// للحجوزات مع مرفقات متعددة
+const uploadReservationFiles = (req, res, next) => {
+  multiFieldUpload.fields([
+    { name: 'contractImage', maxCount: 1 },
+    { name: 'contractPdf', maxCount: 1 },
+    { name: 'identityImageFront', maxCount: 1 },
+    { name: 'identityImageBack', maxCount: 1 },
+    { name: 'commercialRegisterImage', maxCount: 1 },
+    { name: 'depositCheckImage', maxCount: 1 }
+  ])(req, res, (err) => {
+    if (err) return handleUploadError(err, req, res, next);
+    next();
+  });
+};
+
+// Middleware الموجود مسبقاً
+const uploadMiddleware = {
+  // الموجود مسبقاً
+  contractImage: (req, res, next) => {
+    singleAttachmentUpload.single('contractImage')(req, res, (err) => {
+      if (err) return handleUploadError(err, req, res, next);
+      next();
+    });
+  },
+  
+  checkImage: (req, res, next) => {
+    singleAttachmentUpload.single('checkImage')(req, res, (err) => {
+      if (err) return handleUploadError(err, req, res, next);
+      next();
+    });
+  },
+  
+  attachmentFile: (req, res, next) => {
+    singleAttachmentUpload.single('attachmentFile')(req, res, (err) => {
+      if (err) return handleUploadError(err, req, res, next);
+      next();
+    });
+  },
+
+  // الجديد
+  expenseAttachment: uploadExpenseAttachment,
+  serviceOrderFiles: uploadServiceOrderFiles,
+  singleAttachment: uploadSingleAttachment,
+  reservationFiles: uploadReservationFiles
+};
+
+module.exports = {
+  ...uploadMiddleware,
+  handleUploadError
+};

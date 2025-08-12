@@ -1,14 +1,112 @@
 // middleware/validation.middleware.js
 const { validationResult, check } = require('express-validator');
 
-// وسيط التحقق من الأخطاء
+// قواعد التحقق من المصاريف المحدثة
+const expenseValidationRules = [
+  check('buildingId').isInt().withMessage('معرف المبنى يجب أن يكون رقمًا صحيحًا'),
+  check('unitId').optional({ nullable: true }).isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
+  check('serviceOrderId').optional({ nullable: true }).isInt().withMessage('معرف طلب الخدمة يجب أن يكون رقمًا صحيحًا'),
+  check('expenseType').isIn([
+    'maintenance', 'utilities', 'insurance', 'cleaning', 
+    'security', 'management', 'repairs', 'other'
+  ]).withMessage('نوع المصروف غير صالح'),
+  check('amount').isNumeric().withMessage('المبلغ يجب أن يكون رقمًا'),
+  check('expenseDate').isDate().withMessage('تاريخ المصروف مطلوب وبتنسيق صحيح'),
+  check('responsibleParty').isIn(['owner', 'tenant']).withMessage('المسؤول عن الدفع يجب أن يكون مالك أو مستأجر'),
+  check('attachmentDescription').optional({ nullable: true }).isLength({ max: 500 }).withMessage('وصف المرفق يجب أن يكون أقل من 500 حرف'),
+  check('notes').optional({ nullable: true }).isLength({ max: 1000 }).withMessage('الملاحظات يجب أن تكون أقل من 1000 حرف')
+];
+
+// قواعد التحقق من إنشاء مصروف من طلب خدمة
+const expenseFromServiceOrderValidationRules = [
+  check('responsibleParty').isIn(['owner', 'tenant']).withMessage('المسؤول عن الدفع يجب أن يكون مالك أو مستأجر'),
+  check('notes').optional({ nullable: true }).isLength({ max: 1000 }).withMessage('الملاحظات يجب أن تكون أقل من 1000 حرف')
+];
+
+// قواعد التحقق من تحديث طلب الخدمة مع الحقول الجديدة
+const serviceOrderUpdateValidationRules = [
+  check('serviceType').optional().isIn(['financial', 'maintenance', 'administrative']).withMessage('نوع الخدمة غير صالح'),
+  check('serviceSubtype').optional().notEmpty().withMessage('النوع الفرعي للخدمة مطلوب'),
+  check('description').optional().notEmpty().withMessage('وصف الخدمة مطلوب'),
+  check('status').optional().isIn(['pending', 'in-progress', 'completed', 'rejected']).withMessage('حالة الطلب غير صالحة'),
+  check('servicePrice').optional({ nullable: true }).isNumeric().withMessage('سعر الخدمة يجب أن يكون رقمًا'),
+  check('completionDescription').optional({ nullable: true }).isLength({ max: 1000 }).withMessage('وصف الإكمال يجب أن يكون أقل من 1000 حرف')
+];
+
+// قواعد التحقق الشرطية لطلبات الخدمة
+const serviceOrderConditionalValidation = [
+  // التحقق من سعر الخدمة عند الإكمال أو الإلغاء
+  check('servicePrice').if(check('status').isIn(['completed', 'rejected']))
+    .notEmpty().withMessage('سعر الخدمة مطلوب عند إكمال أو إلغاء الطلب')
+    .isNumeric().withMessage('سعر الخدمة يجب أن يكون رقمًا صالحًا'),
+  
+  // التحقق من وصف الإكمال عند الإكمال أو الإلغاء
+  check('completionDescription').if(check('status').isIn(['completed', 'rejected']))
+    .notEmpty().withMessage('وصف الإكمال مطلوب عند إكمال أو إلغاء الطلب')
+];
+
+// دالة التحقق المخصصة للملفات
+const validateServiceOrderFiles = (req, res, next) => {
+  const { status } = req.body;
+  
+  // إذا كانت الحالة completed أو rejected، التحقق من وجود مرفق الإكمال
+  if (['completed', 'rejected'].includes(status)) {
+    const userRole = req.user?.role;
+    
+    // مسؤول الصيانة والمحاسب يجب أن يرفقوا ملف عند الإكمال
+    if (['maintenance', 'accountant'].includes(userRole)) {
+      if (!req.files?.completionAttachment && !req.body.hasExistingCompletionAttachment) {
+        return res.status(400).json({
+          status: 'fail',
+          message: 'مرفق الإكمال مطلوب عند إكمال أو إلغاء الطلب'
+        });
+      }
+    }
+  }
+  
+  next();
+};
+
+// دالة التحقق من صحة بيانات المصروف
+const validateExpenseData = (req, res, next) => {
+  const { buildingId, unitId } = req.body;
+  
+  // إذا تم توفير unitId، يجب التأكد من أنه ينتمي للمبنى المحدد
+  if (unitId && buildingId) {
+    // هذا التحقق سيتم في الـ controller
+    // هنا فقط نتأكد من وجود البيانات المطلوبة
+  }
+  
+  next();
+};
+
+// دالة مخصصة للتحقق من المرفقات في المصاريف
+const validateExpenseAttachment = (req, res, next) => {
+  const { attachmentDescription } = req.body;
+  
+  // إذا تم توفير وصف للمرفق، يجب أن يكون هناك مرفق
+  if (attachmentDescription && !req.file && !req.body.hasExistingAttachment) {
+    return res.status(400).json({
+      status: 'fail',
+      message: 'لا يمكن إضافة وصف مرفق بدون رفع ملف'
+    });
+  }
+  
+  next();
+};
+
 const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({ 
+      status: 'fail',
+      message: 'خطأ في التحقق من البيانات',
+      errors: errors.array() 
+    });
   }
   next();
 };
+// وسيط التحقق من الأخطاء
 
 // قواعد التحقق من إعادة تعيين كلمة مرور المدير
 const resetManagerPasswordvalidate = [
@@ -97,16 +195,7 @@ const buildingValidationRules = [
   check('internalParkingSpaces').optional({ nullable: true }).isInt().withMessage('عدد المواقف الداخلية يجب أن يكون رقمًا صحيحًا'),
   check('description').optional({ nullable: true })
 ];
-const expenseValidationRules = [
-  check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
-  check('expenseType').isIn([
-    'maintenance', 'utilities', 'insurance', 'cleaning', 
-    'security', 'management', 'repairs', 'other'
-  ]).withMessage('نوع المصروف غير صالح'),
-  check('amount').isNumeric().withMessage('المبلغ يجب أن يكون رقمًا'),
-  check('expenseDate').isDate().withMessage('تاريخ المصروف مطلوب وبتنسيق صحيح'),
-  check('notes').optional({ nullable: true }).isLength({ max: 500 }).withMessage('الملاحظات يجب أن تكون أقل من 500 حرف')
-];
+
 
 
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
@@ -216,5 +305,15 @@ module.exports = {
   loginValidationRules,
   resetManagerPasswordvalidate,
   reservationUpdateValidationRules,
-  expenseValidationRules
+  expenseValidationRules,
+    // قواعد التحقق من المصاريف
+  expenseValidationRules,
+  expenseFromServiceOrderValidationRules,
+  validateExpenseData,
+  validateExpenseAttachment,
+  
+  // قواعد التحقق من طلبات الخدمة
+  serviceOrderUpdateValidationRules,
+  serviceOrderConditionalValidation,
+  validateServiceOrderFiles,
 };

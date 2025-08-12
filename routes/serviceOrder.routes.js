@@ -1,48 +1,93 @@
-// Service Order routes 
+// routes/serviceOrder.routes.js - محدث مع المسارات الجديدة
+
 const express = require('express');
 const router = express.Router();
 const serviceOrderController = require('../controllers/serviceOrder.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager, isTenantOrManagerWithAccess, isAdminOrManagerOrMaintenance, isAdminOrManagerOrMaintenanceOrAccountant } = require('../middleware/role.middleware');
-const { validate, serviceOrderValidationRules } = require('../middleware/validation.middleware');
+const { 
+  isAdminOrManager, 
+  isTenantOrManagerWithAccess, 
+  isAdminOrManagerOrMaintenance, 
+  isAdminOrManagerOrMaintenanceOrAccountant,
+  isAccountant
+} = require('../middleware/role.middleware');
+const { 
+  validate, 
+  serviceOrderValidationRules,
+  serviceOrderUpdateValidationRules,
+  serviceOrderConditionalValidation,
+  validateServiceOrderFiles
+} = require('../middleware/validation.middleware');
 const uploadMiddleware = require('../middleware/upload.middleware');
 
-// Apply auth middleware to all routes
+// تطبيق وسيط المصادقة على جميع المسارات
 router.use(authMiddleware);
 
-// Admin/Manager routes
+// المسارات العامة
 router.get('/', isAdminOrManagerOrMaintenanceOrAccountant, serviceOrderController.getAllServiceOrders);
 
-// Get service order by ID - accessible to admin/manager and the tenant who owns the service order
+// الحصول على طلب خدمة حسب المعرف
 router.get('/:id', serviceOrderController.getServiceOrderById);
 
-// Get service order history by ID
+// الحصول على تاريخ طلب الخدمة
 router.get('/:id/history', serviceOrderController.getServiceOrderHistory);
 
-// Get allowed statuses for a service order (NEW ROUTE)
+// الحصول على الحالات المسموحة لطلب خدمة
 router.get('/:id/allowed-statuses', serviceOrderController.getAllowedStatusesForServiceOrder);
 
-// Create service order (with attachment upload)
+// === مسارات المحاسب الجديدة ===
+
+// الحصول على طلبات الخدمة المكتملة للمحاسب
+router.get(
+  '/accountant/completed-orders', 
+  isAccountant, 
+  serviceOrderController.getCompletedServiceOrdersForAccountant
+);
+
+// الحصول على تفاصيل طلب خدمة لإنشاء مصروف
+router.get(
+  '/accountant/for-expense/:id', 
+  isAccountant, 
+  serviceOrderController.getServiceOrderForExpenseCreation
+);
+
+// === مسارات إنشاء وتعديل طلبات الخدمة ===
+
+// إنشاء طلب خدمة (مع مرفق)
 router.post(
   '/',
-  uploadMiddleware.attachmentFile,
+  uploadMiddleware.singleAttachment,
   serviceOrderValidationRules,
   validate,
   serviceOrderController.createServiceOrder
 );
 
-// Update service order (with attachment upload)
+// تحديث طلب خدمة (مع مرفقات متعددة)
 router.put(
   '/:id',
-  uploadMiddleware.attachmentFile,
+  uploadMiddleware.serviceOrderFiles,
+  serviceOrderUpdateValidationRules,
+  serviceOrderConditionalValidation,
   validate,
+  validateServiceOrderFiles,
   serviceOrderController.updateServiceOrder
 );
 
-// Delete service order
+// حذف طلب خدمة
 router.delete('/:id', serviceOrderController.deleteServiceOrder);
 
-// Get service orders by reservation ID
-router.get('/reservation/:reservationId', isTenantOrManagerWithAccess, serviceOrderController.getServiceOrdersByReservationId);
+// الحصول على طلبات الخدمة حسب معرف الحجز
+router.get(
+  '/reservation/:reservationId', 
+  isTenantOrManagerWithAccess, 
+  serviceOrderController.getServiceOrdersByReservationId
+);
+
+// الحصول على إحصائيات طلبات الخدمة
+router.get(
+  '/statistics/summary', 
+  isAdminOrManagerOrMaintenanceOrAccountant, 
+  serviceOrderController.getServiceOrderStats
+);
 
 module.exports = router;

@@ -1,6 +1,6 @@
 // scripts/runMigration.js - تشغيل التحديثات على قاعدة البيانات
 
-const sequelize = require('../config/database');
+const sequelize = require('./config/database');
 
 const runExpenseSystemMigration = async () => {
   try {

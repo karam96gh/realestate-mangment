@@ -1,4 +1,4 @@
-// utils/contractExpiration.js - نظام انتهاء العقود التلقائي
+// utils/contractExpiration.js - نظام انتهاء العقود التلقائي (بدون تغيير حالة الوحدة)
 
 const { Op } = require('sequelize');
 const Reservation = require('../models/reservation.model');
@@ -10,7 +10,7 @@ const { auditLog } = require('./logger');
 class ContractExpirationService {
   
   /**
-   * فحص العقود المنتهية وتحديث حالة الوحدات
+   * فحص العقود المنتهية وتحديث حالة الحجوزات فقط
    */
   static async checkExpiredContracts() {
     try {
@@ -61,7 +61,7 @@ class ContractExpirationService {
             status: 'success'
           });
           
-          console.log(`✅ تم انتهاء عقد الوحدة ${reservation.unit.unitNumber} للمستأجر ${reservation.user.fullName}`);
+          console.log(`✅ تم انتهاء عقد الوحدة ${reservation.unit.unitNumber} للمستأجر ${reservation.user.fullName} (حالة الوحدة لم تتغير)`);
           
         } catch (error) {
           results.errors++;
@@ -81,10 +81,12 @@ class ContractExpirationService {
         totalFound: expiredReservations.length,
         processed: results.processed,
         errors: results.errors,
-        date: today
+        date: today,
+        note: 'Unit status unchanged - manual intervention required'
       });
 
       console.log(`📊 انتهت معالجة العقود: ${results.processed} نجحت، ${results.errors} فشلت`);
+      console.log(`ℹ️ ملاحظة: حالة الوحدات لم تتغير - يتطلب تدخل يدوي`);
       
       return results;
       
@@ -95,25 +97,19 @@ class ContractExpirationService {
   }
 
   /**
-   * انتهاء عقد واحد
+   * انتهاء عقد واحد - بدون تغيير حالة الوحدة
    */
   static async expireContract(reservation) {
     const transaction = await reservation.sequelize.transaction();
     
     try {
-      // تحديث حالة الحجز إلى منتهي
+      // تحديث حالة الحجز إلى منتهي فقط
       await reservation.update({
         status: 'expired'
       }, { transaction });
 
-      // تحديث حالة الوحدة إلى متاحة
-      await RealEstateUnit.update(
-        { status: 'available' },
-        { 
-          where: { id: reservation.unitId },
-          transaction 
-        }
-      );
+      // ***** تم إزالة جزء تحديث حالة الوحدة *****
+      // لن يتم تغيير حالة الوحدة - ستبقى كما هي
 
       await transaction.commit();
 
@@ -123,7 +119,8 @@ class ContractExpirationService {
         unitId: reservation.unitId,
         tenantId: reservation.userId,
         endDate: reservation.endDate,
-        unitNumber: reservation.unit?.unitNumber
+        unitNumber: reservation.unit?.unitNumber,
+        note: 'Unit status unchanged - requires manual intervention'
       });
 
     } catch (error) {
@@ -206,7 +203,7 @@ class ContractExpirationService {
   }
 
   /**
-   * معالجة يدوية لعقد واحد
+   * معالجة يدوية لعقد واحد - بدون تغيير حالة الوحدة
    */
   static async manuallyExpireContract(reservationId, userId) {
     try {
@@ -238,16 +235,93 @@ class ContractExpirationService {
         reservationId: reservation.id,
         unitId: reservation.unitId,
         tenantId: reservation.userId,
-        endDate: reservation.endDate
+        endDate: reservation.endDate,
+        note: 'Manual expiration - unit status unchanged'
       });
 
       return {
         success: true,
-        message: `تم إنهاء عقد الوحدة ${reservation.unit.unitNumber} بنجاح`
+        message: `تم إنهاء عقد الوحدة ${reservation.unit.unitNumber} بنجاح (حالة الوحدة لم تتغير)`
       };
 
     } catch (error) {
       console.error('خطأ في الإنهاء اليدوي للعقد:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * دالة جديدة لتحرير الوحدات يدوياً (للمديرين)
+   */
+  static async manuallyReleaseUnit(unitId, userId, reason = 'manual release') {
+    try {
+      const unit = await RealEstateUnit.findByPk(unitId);
+      
+      if (!unit) {
+        throw new Error('الوحدة غير موجودة');
+      }
+
+      // تحديث حالة الوحدة إلى متاحة
+      await unit.update({ status: 'available' });
+
+      // تسجيل العملية اليدوية
+      auditLog('UNIT_MANUALLY_RELEASED', userId, {
+        unitId: unit.id,
+        unitNumber: unit.unitNumber,
+        oldStatus: unit.status,
+        newStatus: 'available',
+        reason: reason
+      });
+
+      return {
+        success: true,
+        message: `تم تحرير الوحدة ${unit.unitNumber} بنجاح`
+      };
+
+    } catch (error) {
+      console.error('خطأ في التحرير اليدوي للوحدة:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * الحصول على تقرير الوحدات التي تحتاج تحرير يدوي
+   */
+  static async getUnitsNeedingManualRelease() {
+    try {
+      // البحث عن الوحدات المؤجرة التي لها عقود منتهية أو ملغاة
+      const unitsNeedingRelease = await RealEstateUnit.findAll({
+        where: {
+          status: 'rented'
+        },
+        include: [
+          {
+            model: Reservation,
+            as: 'reservations',
+            where: {
+              status: { [Op.in]: ['expired', 'cancelled'] }
+            },
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'fullName', 'phone']
+              }
+            ],
+            order: [['endDate', 'DESC']],
+            limit: 1
+          },
+          {
+            model: Building,
+            as: 'building',
+            attributes: ['id', 'name']
+          }
+        ]
+      });
+
+      return unitsNeedingRelease;
+    } catch (error) {
+      console.error('خطأ في الحصول على الوحدات التي تحتاج تحرير يدوي:', error);
       throw error;
     }
   }
@@ -266,6 +340,7 @@ const scheduleContractExpiration = () => {
   });
 
   console.log('📅 تم جدولة مهمة فحص العقود المنتهية (يومياً الساعة 2:00 صباحاً)');
+  console.log('ℹ️ ملاحظة: حالة الوحدات لن تتغير تلقائياً - يتطلب تدخل يدوي');
 };
 
 // تشغيل المهمة عند بدء التطبيق (اختياري)

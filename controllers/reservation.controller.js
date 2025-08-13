@@ -1,4 +1,4 @@
-// controllers/reservation.controller.js - مع إضافة معلومات المستأجر الكاملة
+// controllers/reservation.controller.js - النسخة المحدثة (بدون تغيير حالة الوحدة)
 
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
@@ -412,7 +412,7 @@ const createReservation = catchAsync(async (req, res, next) => {
   }
 });
 
-// تحديث حجز مع حقول التأمين
+// تحديث حجز مع حقول التأمين - بدون تغيير حالة الوحدة
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
@@ -547,28 +547,9 @@ const updateReservation = catchAsync(async (req, res, next) => {
   // تحديث الحجز
   await reservation.update(updateData);
   
-  // ***** تحديث حالة الوحدة عند تغيير حالة الحجز *****
-  if (status && (status === 'cancelled' || status === 'expired') && originalStatus === 'active') {
-    try {
-      console.log('🔄 محاولة تحديث حالة الوحدة...');
-      console.log('معرف الوحدة:', reservation.unitId);
-      
-      const unit = await RealEstateUnit.findByPk(reservation.unitId);
-      if (!unit) {
-        console.error('❌ لم يتم العثور على الوحدة');
-        return next(new AppError('الوحدة غير موجودة', 404));
-      }
-      
-      console.log('الحالة الحالية للوحدة:', unit.status);
-      
-      await unit.update({ status: 'available' });
-      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - تغيير حالة الحجز من ${originalStatus} إلى ${status}`);
-      
-    } catch (error) {
-      console.error('❌ خطأ في تحديث حالة الوحدة:', error);
-      // لا نوقف العملية، فقط نسجل الخطأ
-    }
-  }
+  // ***** تم إزالة جزء تحديث حالة الوحدة *****
+  // لن يتم تغيير حالة الوحدة عند تغيير حالة الحجز
+  console.log(`📝 تم تحديث الحجز ${reservation.id} من ${originalStatus} إلى ${status || originalStatus} بدون تغيير حالة الوحدة`);
   
   res.status(200).json({
     status: 'success',
@@ -576,7 +557,7 @@ const updateReservation = catchAsync(async (req, res, next) => {
   });
 });
 
-// حذف حجز
+// حذف حجز - بدون تغيير حالة الوحدة
 const deleteReservation = catchAsync(async (req, res, next) => {
   const reservation = await Reservation.findByPk(req.params.id);
   
@@ -611,23 +592,9 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // ***** تحديث حالة الوحدة عند حذف الحجز *****
-  try {
-    console.log('🔄 محاولة تحرير الوحدة عند الحذف...');
-    
-    const unit = await RealEstateUnit.findByPk(reservation.unitId);
-    if (!unit) {
-      console.error('❌ لم يتم العثور على الوحدة');
-    } else {
-      console.log('الحالة الحالية للوحدة:', unit.status);
-      
-      await unit.update({ status: 'available' });
-      console.log(`✅ تم تحرير الوحدة ${unit.unitNumber} - حذف الحجز ${reservation.id}`);
-    }
-  } catch (error) {
-    console.error('❌ خطأ في تحرير الوحدة عند الحذف:', error);
-    // لا نوقف العملية، فقط نسجل الخطأ
-  }
+  // ***** تم إزالة جزء تحرير الوحدة عند الحذف *****
+  // لن يتم تغيير حالة الوحدة عند حذف الحجز
+  console.log(`📝 تم حذف الحجز ${reservation.id} بدون تغيير حالة الوحدة`);
   
   await reservation.destroy();
   

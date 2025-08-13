@@ -1,4 +1,4 @@
-// controllers/reservation.controller.js - النسخة المحدثة (بدون تغيير حالة الوحدة)
+// controllers/reservation.controller.js - تحديث مع التحقق المالي قبل الإلغاء
 
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
@@ -16,12 +16,17 @@ const { generatePaymentSchedule } = require('../utils/paymentScheduler');
 const PaymentHistory = require('../models/paymentHistory.model');
 const sequelize = require('../config/database');
 
+// ✅ استيراد دوال التحقق المالي
+const { 
+  canCancelReservation, 
+  updatePendingPaymentsStatus,
+  generateFinancialSummaryReport 
+} = require('../utils/financialValidator');
+
 // الحصول على حجوزاتي
 const getMyReservations = catchAsync(async (req, res) => {
-  // الحصول على حجوزات المستخدم المصادق عليه
   console.log('User ID:', req.user.id);
   
-  // التحقق أولاً من وجود المستخدم
   const user = await User.findByPk(req.user.id);
   if (!user) {
     console.log('User not found in database');
@@ -31,13 +36,11 @@ const getMyReservations = catchAsync(async (req, res) => {
     });
   }
   
-  // حساب عدد الحجوزات لهذا المستخدم
   const reservationCount = await Reservation.count({
     where: { userId: req.user.id }
   });
   console.log('Reservation count for this user:', reservationCount);
   
-  // الحصول على الحجوزات مع معلومات الوحدة والمبنى
   const reservations = await Reservation.findAll({
     where: { userId: req.user.id },
     include: [
@@ -54,13 +57,246 @@ const getMyReservations = catchAsync(async (req, res) => {
     order: [['createdAt', 'DESC']]
   });
   
-  // إرجاع مصفوفة الحجوزات مع المعلومات التفصيلية
   res.status(200).json({
     status: 'success',
     results: reservations.length,
     data: reservations
   });
 });
+
+// ✅ تحديث دالة updateReservation مع التحقق المالي عند الإلغاء
+const updateReservation = catchAsync(async (req, res, next) => {
+  const { 
+    contractType,
+    startDate, 
+    endDate, 
+    status, 
+    paymentMethod,
+    paymentSchedule,
+    
+    // حقول التأمين المحدثة
+    includesDeposit,
+    depositAmount,
+    depositPaymentMethod,
+    depositStatus,
+    depositPaidDate,
+    depositReturnedDate,
+    depositNotes,
+    
+    notes
+  } = req.body;
+  
+  // التحقق من وجود الحجز مع معلومات المستأجر
+  const reservation = await Reservation.findByPk(req.params.id, {
+    include: [{
+      model: User,
+      as: 'user',
+      attributes: { exclude: ['password'] },
+      include: [{
+        model: Tenant,
+        as: 'tenantInfo',
+        required: false
+      }]
+    }]
+  });
+  
+  if (!reservation) {
+    return next(new AppError('الحجز غير موجود', 404));
+  }
+  
+  // ***** حفظ الحالة الأصلية قبل التحديث *****
+  const originalStatus = reservation.status;
+  
+  console.log('الحالة الأصلية للحجز:', originalStatus);
+  console.log('الحالة الجديدة:', status);
+  
+  // ✅ التحقق المالي قبل الإلغاء
+  if (status === 'cancelled' && originalStatus !== 'cancelled') {
+    console.log('🔍 بدء التحقق من المستحقات المالية قبل الإلغاء...');
+    
+    try {
+      // التحقق من إمكانية الإلغاء
+      const cancellationCheck = await canCancelReservation(reservation.id, reservation.userId);
+      
+      if (!cancellationCheck.canCancel) {
+        // إرجاع تفاصيل المستحقات غير المدفوعة
+        return res.status(400).json({
+          status: 'fail',
+          message: cancellationCheck.reason,
+          code: 'OUTSTANDING_PAYMENTS',
+          outstandingPayments: cancellationCheck.outstandingItems,
+          details: {
+            totalOutstanding: cancellationCheck.outstandingItems.totalOutstanding,
+            unpaidPaymentsCount: cancellationCheck.outstandingItems.unpaidPayments.length,
+            unpaidExpensesCount: cancellationCheck.outstandingItems.unpaidExpenses.length,
+            summary: cancellationCheck.outstandingItems.summary
+          }
+        });
+      }
+      
+      console.log('✅ جميع المستحقات المالية مدفوعة، يمكن متابعة الإلغاء');
+      
+    } catch (error) {
+      console.error('❌ خطأ في التحقق من المستحقات المالية:', error);
+      return next(new AppError('فشل في التحقق من الحالة المالية', 500));
+    }
+  }
+  
+  // معالجة الملفات المرفقة
+  let contractImage = reservation.contractImage;
+  let contractPdf = reservation.contractPdf;
+  let depositCheckImage = reservation.depositCheckImage;
+  
+  if (req.files) {
+    // معالجة صورة العقد
+    if (req.files.contractImage && req.files.contractImage.length > 0) {
+      if (reservation.contractImage) {
+        const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
+        if (fs.existsSync(oldContractPath)) {
+          fs.unlinkSync(oldContractPath);
+        }
+      }
+      contractImage = req.files.contractImage[0].filename;
+    }
+    
+    // معالجة ملف العقد PDF
+    if (req.files.contractPdf && req.files.contractPdf.length > 0) {
+      if (reservation.contractPdf) {
+        const oldPdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
+        if (fs.existsSync(oldPdfPath)) {
+          fs.unlinkSync(oldPdfPath);
+        }
+      }
+      contractPdf = req.files.contractPdf[0].filename;
+    }
+    
+    // معالجة صورة شيك التأمين
+    if (req.files.depositCheckImage && req.files.depositCheckImage.length > 0) {
+      if (reservation.depositCheckImage) {
+        const oldDepositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
+        if (fs.existsSync(oldDepositCheckPath)) {
+          fs.unlinkSync(oldDepositCheckPath);
+        }
+      }
+      depositCheckImage = req.files.depositCheckImage[0].filename;
+    }
+  }
+  
+  // تحضير بيانات التحديث
+  const updateData = {
+    contractType: contractType || reservation.contractType,
+    startDate: startDate || reservation.startDate,
+    endDate: endDate || reservation.endDate,
+    contractImage,
+    contractPdf,
+    paymentMethod: paymentMethod || reservation.paymentMethod,
+    paymentSchedule: paymentSchedule || reservation.paymentSchedule,
+    status: status || reservation.status,
+    notes: notes !== undefined ? notes : reservation.notes
+  };
+  
+  // تحديث بيانات التأمين
+  if (includesDeposit !== undefined) {
+    updateData.includesDeposit = includesDeposit === 'true' || includesDeposit === true;
+  }
+  
+  if (depositAmount !== undefined) {
+    updateData.depositAmount = depositAmount;
+  }
+  
+  if (depositPaymentMethod !== undefined) {
+    updateData.depositPaymentMethod = depositPaymentMethod;
+  }
+  
+  if (depositCheckImage !== undefined) {
+    updateData.depositCheckImage = depositCheckImage;
+  }
+  
+  if (depositStatus !== undefined) {
+    updateData.depositStatus = depositStatus;
+  }
+  
+  if (depositPaidDate !== undefined) {
+    updateData.depositPaidDate = depositPaidDate;
+  }
+  
+  if (depositReturnedDate !== undefined) {
+    updateData.depositReturnedDate = depositReturnedDate;
+  }
+  
+  if (depositNotes !== undefined) {
+    updateData.depositNotes = depositNotes;
+  }
+  
+  const transaction = await sequelize.transaction();
+  
+  try {
+    // تحديث الحجز
+    await reservation.update(updateData, { transaction });
+    
+    // ✅ إذا تم إلغاء الحجز، قم بالإجراءات الإضافية
+    if (status === 'cancelled' && originalStatus !== 'cancelled') {
+      console.log('🔄 معالجة إلغاء الحجز...');
+      
+      // 1. تحديث حالة الدفعات المعلقة إلى ملغاة
+      await updatePendingPaymentsStatus(
+        reservation.id, 
+        'cancelled', 
+        'إلغاء الحجز - تم تسوية جميع المستحقات'
+      );
+      
+      // 2. تعطيل حساب المستأجر
+      const tenantUser = await User.findByPk(reservation.userId);
+      if (tenantUser && tenantUser.role === 'tenant') {
+        await tenantUser.deactivate('إنهاء العقد - تم إلغاء الحجز', { transaction });
+        console.log(`🔒 تم تعطيل حساب المستأجر: ${tenantUser.fullName}`);
+      }
+      
+      console.log('✅ تم إكمال جميع إجراءات الإلغاء بنجاح');
+    }
+    
+    await transaction.commit();
+    
+    console.log(`📝 تم تحديث الحجز ${reservation.id} من ${originalStatus} إلى ${status || originalStatus}`);
+    
+    res.status(200).json({
+      status: 'success',
+      message: status === 'cancelled' ? 'تم إلغاء الحجز وتعطيل حساب المستأجر بنجاح' : 'تم تحديث الحجز بنجاح',
+      data: reservation
+    });
+    
+  } catch (error) {
+    await transaction.rollback();
+    console.error('❌ خطأ في تحديث الحجز:', error);
+    throw error;
+  }
+});
+
+// ✅ دالة جديدة للتحقق من المستحقات المالية قبل الإلغاء
+const checkFinancialStatus = catchAsync(async (req, res, next) => {
+  const reservationId = req.params.id;
+  
+  const reservation = await Reservation.findByPk(reservationId);
+  
+  if (!reservation) {
+    return next(new AppError('الحجز غير موجود', 404));
+  }
+  
+  try {
+    const financialReport = await generateFinancialSummaryReport(reservationId, reservation.userId);
+    
+    res.status(200).json({
+      status: 'success',
+      data: financialReport
+    });
+    
+  } catch (error) {
+    console.error('خطأ في فحص الحالة المالية:', error);
+    return next(new AppError('فشل في فحص الحالة المالية', 500));
+  }
+});
+
+// باقي الدوال الموجودة (بدون تغيير)...
 
 // الحصول على جميع الحجوزات مع معلومات المستأجر الكاملة
 const getAllReservations = catchAsync(async (req, res, next) => {
@@ -74,11 +310,11 @@ const getAllReservations = catchAsync(async (req, res, next) => {
     { 
       model: User, 
       as: 'user', 
-      attributes: { exclude: ['password'] }, // استبعاد كلمة المرور فقط
+      attributes: { exclude: ['password'] },
       include: [{
         model: Tenant,
-        as: 'tenantInfo', // تضمين معلومات المستأجر الكاملة
-        required: false // left join للحالات التي قد لا يكون فيها tenant info
+        as: 'tenantInfo',
+        required: false
       }]
     },
     { 
@@ -98,7 +334,6 @@ const getAllReservations = catchAsync(async (req, res, next) => {
       return next(new AppError('المدير غير مرتبط بأي شركة', 403));
     }
     
-    // نحتاج إلى استعلامات متداخلة للحصول على الحجوزات المرتبطة بشركة المدير
     const companyBuildings = await Building.findAll({
       where: { companyId: req.user.companyId },
       attributes: ['id']
@@ -135,10 +370,10 @@ const getReservationById = catchAsync(async (req, res, next) => {
       { 
         model: User, 
         as: 'user',
-        attributes: { exclude: ['password'] }, // استبعاد كلمة المرور فقط
+        attributes: { exclude: ['password'] },
         include: [{
           model: Tenant,
-          as: 'tenantInfo', // تضمين معلومات المستأجر الكاملة
+          as: 'tenantInfo',
           required: false
         }]
       },
@@ -235,7 +470,7 @@ const createReservation = catchAsync(async (req, res, next) => {
     let identityImageFront = null;
     let identityImageBack = null;
     let commercialRegisterImage = null;
-    let depositCheckImage = null; // جديد
+    let depositCheckImage = null;
         
     if (req.files) {
       if (req.files.contractImage && req.files.contractImage.length > 0) {
@@ -376,8 +611,8 @@ const createReservation = catchAsync(async (req, res, next) => {
       tenant: {
         ...tenant.get({ plain: true }),
         user: {
-          ...user.toJSON(), // يستبعد كلمة المرور تلقائياً
-          rawPassword: password // كلمة المرور النصية فقط عند الإنشاء
+          ...user.toJSON(),
+          rawPassword: password
         }
       },
       paymentSchedule: createdPayments.map(payment => payment.toJSON())
@@ -410,151 +645,6 @@ const createReservation = catchAsync(async (req, res, next) => {
     
     throw error;
   }
-});
-
-// تحديث حجز مع حقول التأمين - بدون تغيير حالة الوحدة
-const updateReservation = catchAsync(async (req, res, next) => {
-  const { 
-    contractType,
-    startDate, 
-    endDate, 
-    status, 
-    paymentMethod,
-    paymentSchedule,
-    
-    // حقول التأمين المحدثة
-    includesDeposit,
-    depositAmount,
-    depositPaymentMethod,
-    depositStatus,
-    depositPaidDate,
-    depositReturnedDate,
-    depositNotes,
-    
-    notes
-  } = req.body;
-  
-  // التحقق من وجود الحجز مع معلومات المستأجر
-  const reservation = await Reservation.findByPk(req.params.id, {
-    include: [{
-      model: User,
-      as: 'user',
-      attributes: { exclude: ['password'] },
-      include: [{
-        model: Tenant,
-        as: 'tenantInfo',
-        required: false
-      }]
-    }]
-  });
-  
-  if (!reservation) {
-    return next(new AppError('الحجز غير موجود', 404));
-  }
-  
-  // ***** حفظ الحالة الأصلية قبل التحديث *****
-  const originalStatus = reservation.status;
-  
-  console.log('الحالة الأصلية للحجز:', originalStatus);
-  console.log('الحالة الجديدة:', status);
-  
-  // معالجة الملفات المرفقة
-  let contractImage = reservation.contractImage;
-  let contractPdf = reservation.contractPdf;
-  let depositCheckImage = reservation.depositCheckImage;
-  
-  if (req.files) {
-    // معالجة صورة العقد
-    if (req.files.contractImage && req.files.contractImage.length > 0) {
-      if (reservation.contractImage) {
-        const oldContractPath = path.join(UPLOAD_PATHS.contracts, reservation.contractImage);
-        if (fs.existsSync(oldContractPath)) {
-          fs.unlinkSync(oldContractPath);
-        }
-      }
-      contractImage = req.files.contractImage[0].filename;
-    }
-    
-    // معالجة ملف العقد PDF
-    if (req.files.contractPdf && req.files.contractPdf.length > 0) {
-      if (reservation.contractPdf) {
-        const oldPdfPath = path.join(UPLOAD_PATHS.contracts, reservation.contractPdf);
-        if (fs.existsSync(oldPdfPath)) {
-          fs.unlinkSync(oldPdfPath);
-        }
-      }
-      contractPdf = req.files.contractPdf[0].filename;
-    }
-    
-    // معالجة صورة شيك التأمين
-    if (req.files.depositCheckImage && req.files.depositCheckImage.length > 0) {
-      if (reservation.depositCheckImage) {
-        const oldDepositCheckPath = path.join(UPLOAD_PATHS.checks, reservation.depositCheckImage);
-        if (fs.existsSync(oldDepositCheckPath)) {
-          fs.unlinkSync(oldDepositCheckPath);
-        }
-      }
-      depositCheckImage = req.files.depositCheckImage[0].filename;
-    }
-  }
-  
-  // تحضير بيانات التحديث
-  const updateData = {
-    contractType: contractType || reservation.contractType,
-    startDate: startDate || reservation.startDate,
-    endDate: endDate || reservation.endDate,
-    contractImage,
-    contractPdf,
-    paymentMethod: paymentMethod || reservation.paymentMethod,
-    paymentSchedule: paymentSchedule || reservation.paymentSchedule,
-    status: status || reservation.status,
-    notes: notes !== undefined ? notes : reservation.notes
-  };
-  
-  // تحديث بيانات التأمين
-  if (includesDeposit !== undefined) {
-    updateData.includesDeposit = includesDeposit === 'true' || includesDeposit === true;
-  }
-  
-  if (depositAmount !== undefined) {
-    updateData.depositAmount = depositAmount;
-  }
-  
-  if (depositPaymentMethod !== undefined) {
-    updateData.depositPaymentMethod = depositPaymentMethod;
-  }
-  
-  if (depositCheckImage !== undefined) {
-    updateData.depositCheckImage = depositCheckImage;
-  }
-  
-  if (depositStatus !== undefined) {
-    updateData.depositStatus = depositStatus;
-  }
-  
-  if (depositPaidDate !== undefined) {
-    updateData.depositPaidDate = depositPaidDate;
-  }
-  
-  if (depositReturnedDate !== undefined) {
-    updateData.depositReturnedDate = depositReturnedDate;
-  }
-  
-  if (depositNotes !== undefined) {
-    updateData.depositNotes = depositNotes;
-  }
-  
-  // تحديث الحجز
-  await reservation.update(updateData);
-  
-  // ***** تم إزالة جزء تحديث حالة الوحدة *****
-  // لن يتم تغيير حالة الوحدة عند تغيير حالة الحجز
-  console.log(`📝 تم تحديث الحجز ${reservation.id} من ${originalStatus} إلى ${status || originalStatus} بدون تغيير حالة الوحدة`);
-  
-  res.status(200).json({
-    status: 'success',
-    data: reservation
-  });
 });
 
 // حذف حجز - بدون تغيير حالة الوحدة
@@ -592,8 +682,6 @@ const deleteReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // ***** تم إزالة جزء تحرير الوحدة عند الحذف *****
-  // لن يتم تغيير حالة الوحدة عند حذف الحجز
   console.log(`📝 تم حذف الحجز ${reservation.id} بدون تغيير حالة الوحدة`);
   
   await reservation.destroy();
@@ -656,5 +744,7 @@ module.exports = {
   deleteReservation,
   getReservationsByUnitId,
   getReservationsByUserId,
-  getMyReservations
+  getMyReservations,
+  // ✅ إضافة الدالة الجديدة
+  checkFinancialStatus
 };

@@ -1,4 +1,4 @@
-// models/user.model.js - إصلاح إرجاع URLs للصور
+// models/user.model.js - إضافة حقل isActive
 
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
@@ -89,6 +89,24 @@ const User = sequelize.define('User', {
       key: 'id'
     }
   },
+  // ✅ إضافة حقل حالة المستخدم
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    comment: 'حالة المستخدم - نشط أم معطل'
+  },
+  // ✅ إضافة حقل سبب التعطيل
+  deactivationReason: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'سبب تعطيل الحساب'
+  },
+  // ✅ إضافة تاريخ التعطيل
+  deactivatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'تاريخ تعطيل الحساب'
+  },
   createdAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
@@ -117,6 +135,24 @@ const User = sequelize.define('User', {
 // دالة التحقق من كلمة المرور
 User.prototype.validatePassword = async function(password) {
   return await bcrypt.compare(password, this.password);
+};
+
+// ✅ دالة تعطيل المستخدم
+User.prototype.deactivate = async function(reason = 'عقد منتهي') {
+  await this.update({
+    isActive: false,
+    deactivationReason: reason,
+    deactivatedAt: new Date()
+  });
+};
+
+// ✅ دالة تفعيل المستخدم
+User.prototype.activate = async function() {
+  await this.update({
+    isActive: true,
+    deactivationReason: null,
+    deactivatedAt: null
+  });
 };
 
 // دالة إرجاع كائن مستخدم آمن (بدون كلمة المرور)

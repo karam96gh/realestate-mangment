@@ -1,26 +1,38 @@
-// Auth routes 
+// routes/auth.routes.js - تحديث مع المسارات الجديدة
+
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdmin,isAdminOrManager } = require('../middleware/role.middleware');
-const { validate, loginValidationRules, userValidationRules,resetManagerPasswordvalidate } = require('../middleware/validation.middleware');
-// routes/auth.routes.js
+const { isAdmin, isAdminOrManager } = require('../middleware/role.middleware');
+const { validate, loginValidationRules, userValidationRules, resetManagerPasswordvalidate } = require('../middleware/validation.middleware');
 
-// Add this route to your existing routes
+// ✅ قواعد التحقق الجديدة للتعطيل والتفعيل
+const { check } = require('express-validator');
+
+const deactivateUserValidationRules = [
+  check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا'),
+  check('reason').optional().isLength({ min: 3, max: 500 }).withMessage('السبب يجب أن يكون بين 3 و 500 حرف')
+];
+
+const activateUserValidationRules = [
+  check('userId').isInt().withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا')
+];
+
+// مسار إعادة تعيين كلمة مرور المدير
 router.post(
-    '/reset-manager-password',
-    authMiddleware,
-    isAdmin,
-    
-    resetManagerPasswordvalidate,
-    validate,
-    authController.resetManagerPassword
-  );
-// Login routes
+  '/reset-manager-password',
+  authMiddleware,
+  isAdmin,
+  resetManagerPasswordvalidate,
+  validate,
+  authController.resetManagerPassword
+);
+
+// مسارات تسجيل الدخول
 router.post('/login', loginValidationRules, validate, authController.login);
 
-// Admin routes (protected)
+// مسارات المسؤول (محمية)
 router.post(
   '/admin/register',
   authMiddleware,
@@ -30,7 +42,7 @@ router.post(
   authController.registerAdmin
 );
 
-// Manager routes (protected)
+// مسارات المدير (محمية)
 router.post(
   '/manager/register',
   authMiddleware,
@@ -39,7 +51,8 @@ router.post(
   validate,
   authController.registerManager
 );
-// Accountant routes (protected)
+
+// مسارات المحاسب (محمية)
 router.post(
   '/accountant/register',
   authMiddleware,
@@ -49,7 +62,7 @@ router.post(
   authController.registerAccountant
 );
 
-// Maintenance routes (protected)
+// مسارات عامل الصيانة (محمية)
 router.post(
   '/maintenance/register',
   authMiddleware,
@@ -59,7 +72,7 @@ router.post(
   authController.registerMaintenance
 );
 
-// Owner routes (protected)
+// مسارات مالك العقار (محمية)
 router.post(
   '/owner/register',
   authMiddleware,
@@ -69,13 +82,40 @@ router.post(
   authController.registerOwner
 );
 
-// Protected routes
+// ✅ المسارات الجديدة لإدارة حالة المستخدمين
+router.post(
+  '/deactivate-user',
+  authMiddleware,
+  isAdminOrManager,
+  deactivateUserValidationRules,
+  validate,
+  authController.deactivateUser
+);
+
+router.post(
+  '/activate-user',
+  authMiddleware,
+  isAdminOrManager,
+  activateUserValidationRules,
+  validate,
+  authController.activateUser
+);
+
+// الحصول على قائمة المستخدمين المعطلين
+router.get(
+  '/deactivated-users',
+  authMiddleware,
+  isAdminOrManager,
+  authController.getDeactivatedUsers
+);
+
+// تطبيق وسيط المصادقة على جميع المسارات التالية
 router.use(authMiddleware);
 
-// Change password (any authenticated user)
+// تغيير كلمة المرور (أي مستخدم مصادق عليه)
 router.post('/change-password', authController.changePassword);
 
-// Get current user profile
+// الحصول على ملف المستخدم الحالي
 router.get('/me', authController.getMe);
 
 module.exports = router;

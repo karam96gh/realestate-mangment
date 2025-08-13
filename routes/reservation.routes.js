@@ -1,4 +1,4 @@
-// routes/reservation.routes.js - تحديث المسارات لدعم صورة شيك التأمين
+// routes/reservation.routes.js - تحديث مع مسار التحقق المالي
 
 const express = require('express');
 const router = express.Router();
@@ -27,11 +27,11 @@ const storage = multer.diskStorage({
       case 'commercialRegisterImage':
         uploadPath = UPLOAD_PATHS.identities;
         break;
-      case 'depositCheckImage': // جديد - صورة شيك التأمين
+      case 'depositCheckImage':
         uploadPath = UPLOAD_PATHS.checks;
         break;
       default:
-        uploadPath = UPLOAD_PATHS.attachments; // مجلد افتراضي
+        uploadPath = UPLOAD_PATHS.attachments;
         break;
     }
     
@@ -125,6 +125,13 @@ router.get('/', isAdminOrManagerOrAccountant, reservationController.getAllReserv
 // الحصول على حجز حسب المعرف
 router.get('/:id', reservationController.getReservationById);
 
+// ✅ مسار جديد للتحقق من الحالة المالية قبل الإلغاء
+router.get(
+  '/:id/financial-status',
+  isAdminOrManager,
+  reservationController.checkFinancialStatus
+);
+
 // إنشاء حجز جديد مع رفع الملفات في المجلدات الصحيحة (مع دعم شيك التأمين)
 router.post(
   '/',
@@ -135,7 +142,7 @@ router.post(
     { name: 'identityImageFront', maxCount: 1 },      // سيُحفظ في identities
     { name: 'identityImageBack', maxCount: 1 },       // سيُحفظ في identities
     { name: 'commercialRegisterImage', maxCount: 1 }, // سيُحفظ في identities
-    { name: 'depositCheckImage', maxCount: 1 }        // سيُحفظ في checks - جديد
+    { name: 'depositCheckImage', maxCount: 1 }        // سيُحفظ في checks
   ]),
   handleUploadError,
   logFileInfo,
@@ -144,14 +151,14 @@ router.post(
   reservationController.createReservation
 );
 
-// تحديث حجز (مع دعم تحديث شيك التأمين)
+// تحديث حجز (مع دعم تحديث شيك التأمين والتحقق المالي)
 router.put(
   '/:id',
   isAdminOrManager,
   upload.fields([
     { name: 'contractImage', maxCount: 1 },    // سيُحفظ في contracts
     { name: 'contractPdf', maxCount: 1 },      // سيُحفظ في contracts
-    { name: 'depositCheckImage', maxCount: 1 } // سيُحفظ في checks - جديد
+    { name: 'depositCheckImage', maxCount: 1 } // سيُحفظ في checks
   ]),
   handleUploadError,
   logFileInfo,

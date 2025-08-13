@@ -1,5 +1,47 @@
-// middleware/validation.middleware.js
+// middleware/validation.middleware.js - إضافة قواعد التحقق الجديدة
+
 const { validationResult, check } = require('express-validator');
+
+// ✅ قواعد التحقق الجديدة لإدارة حالة المستخدمين
+const deactivateUserValidationRules = [
+  check('userId')
+    .isInt({ min: 1 })
+    .withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا أكبر من صفر'),
+  check('reason')
+    .optional()
+    .isLength({ min: 3, max: 500 })
+    .withMessage('السبب يجب أن يكون بين 3 و 500 حرف')
+    .trim()
+];
+
+const activateUserValidationRules = [
+  check('userId')
+    .isInt({ min: 1 })
+    .withMessage('معرف المستخدم يجب أن يكون رقمًا صحيحًا أكبر من صفر')
+];
+
+// ✅ قواعد التحقق المحدثة لإلغاء الحجز
+const reservationCancellationValidationRules = [
+  check('status')
+    .optional()
+    .isIn(['active', 'expired', 'cancelled'])
+    .withMessage('حالة الحجز غير صالحة'),
+  check('cancellationReason')
+    .if(check('status').equals('cancelled'))
+    .notEmpty()
+    .withMessage('سبب الإلغاء مطلوب عند إلغاء الحجز')
+    .isLength({ min: 5, max: 500 })
+    .withMessage('سبب الإلغاء يجب أن يكون بين 5 و 500 حرف')
+];
+
+// ✅ قواعد التحقق من الحالة المالية
+const financialCheckValidationRules = [
+  check('reservationId')
+    .isInt({ min: 1 })
+    .withMessage('معرف الحجز يجب أن يكون رقمًا صحيحًا أكبر من صفر')
+];
+
+// القواعد الموجودة مسبقاً...
 
 // قواعد التحقق من المصاريف المحدثة
 const expenseValidationRules = [
@@ -95,6 +137,19 @@ const validateExpenseAttachment = (req, res, next) => {
   next();
 };
 
+// ✅ دالة التحقق من صحة طلب إلغاء الحجز
+const validateReservationCancellation = async (req, res, next) => {
+  const { status } = req.body;
+  
+  // إذا كانت الحالة الجديدة "cancelled"
+  if (status === 'cancelled') {
+    // سيتم التحقق المالي في الـ controller
+    // هنا يمكن إضافة تحققات إضافية إذا لزم الأمر
+  }
+  
+  next();
+};
+
 const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -106,7 +161,6 @@ const validate = (req, res, next) => {
   }
   next();
 };
-// وسيط التحقق من الأخطاء
 
 // قواعد التحقق من إعادة تعيين كلمة مرور المدير
 const resetManagerPasswordvalidate = [
@@ -145,12 +199,6 @@ const tenantValidationRules = [
 ];
 
 // قواعد التحقق من الشركة
-// Updated validation rules without bedrooms field and with companyType field
-
-// Company validation rules - UPDATED with companyType
-// تعديل قواعد التحقق من الشركة في middleware/validation.middleware.js
-
-// Company validation rules - UPDATED with new fields
 const companyValidationRules = [
   check('name').notEmpty().withMessage('اسم الشركة مطلوب'),
   check('companyType').optional().isIn(['owner', 'agency']).withMessage('نوع الشركة غير صالح، يجب أن يكون مالك أو شركة عقارية'),
@@ -166,18 +214,15 @@ const companyValidationRules = [
   check('managerPhone').optional({ nullable: true })
 ];
 
-// Unit validation rules - UPDATED with string floor and no bedrooms
+// قواعد التحقق من الوحدة
 const unitValidationRules = [
   check('buildingId').isInt().withMessage('معرف المبنى يجب أن يكون رقمًا صحيحًا'),
   check('unitNumber').notEmpty().withMessage('رقم الوحدة مطلوب'),
   check('unitType').isIn(['studio', 'apartment', 'shop', 'office', 'villa', 'room']).withMessage('نوع الوحدة غير صالح'),
   check('unitLayout').optional({ nullable: true }).isIn(['studio', '1bhk', '2bhk', '3bhk', '4bhk', '5bhk', '6bhk', '7bhk', 'other']).withMessage('تخطيط الوحدة غير صالح'),
-  // Modified floor validation - no longer integer
-check('floor').optional({ nullable: true }).isString().withMessage('الطابق يجب أن يكون صالحًا'),
-check('parkingNumber').optional({ nullable: true }).isString().withMessage('رقم الموقف يجب أن يكون نصًا'),
-
+  check('floor').optional({ nullable: true }).isString().withMessage('الطابق يجب أن يكون صالحًا'),
+  check('parkingNumber').optional({ nullable: true }).isString().withMessage('رقم الموقف يجب أن يكون نصًا'),
   check('area').optional({ nullable: true }).isNumeric().withMessage('المساحة يجب أن تكون رقمًا'),
-  // bedrooms validation removed
   check('bathrooms').optional({ nullable: true }).isInt().withMessage('عدد الحمامات يجب أن يكون رقمًا صحيحًا'),
   check('price').isNumeric().withMessage('السعر يجب أن يكون رقمًا'),
   check('status').optional({ nullable: true }).isIn(['available', 'rented', 'maintenance']).withMessage('حالة الوحدة غير صالحة'),
@@ -196,10 +241,7 @@ const buildingValidationRules = [
   check('description').optional({ nullable: true })
 ];
 
-
-
 // قواعد التحقق من الحجز - محدثة مع حقول العقد الجديدة
-// قواعد التحقق من الحجز - محدثة لدعم إنشاء مستأجر جديد
 const reservationValidationRules = [
   check('unitId').isInt().withMessage('معرف الوحدة يجب أن يكون رقمًا صحيحًا'),
   check('contractType').optional({ nullable: true }).isIn(['residential', 'commercial']).withMessage('نوع العقد يجب أن يكون سكني أو تجاري'),
@@ -211,7 +253,7 @@ const reservationValidationRules = [
     'monthly', 'quarterly', 'triannual', 'biannual', 'annual'
   ]).withMessage('جدول الدفع غير صالح'),
   
-  // قواعد التحقق من التأمين - محدثة
+  // قواعد التحقق من التأمين
   check('includesDeposit').optional({ nullable: true }).isBoolean().withMessage('يشمل الضمان يجب أن يكون قيمة منطقية'),
   check('depositAmount').optional({ nullable: true }).isNumeric().withMessage('قيمة الضمان يجب أن تكون رقمًا'),
   check('depositPaymentMethod').optional({ nullable: true }).isIn(['cash', 'check']).withMessage('طريقة دفع التأمين يجب أن تكون نقدي أو شيك'),
@@ -306,14 +348,17 @@ module.exports = {
   resetManagerPasswordvalidate,
   reservationUpdateValidationRules,
   expenseValidationRules,
-    // قواعد التحقق من المصاريف
-  expenseValidationRules,
   expenseFromServiceOrderValidationRules,
   validateExpenseData,
   validateExpenseAttachment,
-  
-  // قواعد التحقق من طلبات الخدمة
   serviceOrderUpdateValidationRules,
   serviceOrderConditionalValidation,
   validateServiceOrderFiles,
+  
+  // ✅ إضافة القواعد الجديدة
+  deactivateUserValidationRules,
+  activateUserValidationRules,
+  reservationCancellationValidationRules,
+  financialCheckValidationRules,
+  validateReservationCancellation
 };

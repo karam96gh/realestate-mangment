@@ -8,7 +8,31 @@ const { UPLOAD_PATHS } = require('../config/upload');
 // إعداد التخزين للمرفقات العامة
 const attachmentStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, UPLOAD_PATHS.attachments);
+    let destination = UPLOAD_PATHS.attachments; // افتراضي
+    
+    // تحديد المجلد حسب نوع الملف
+    switch (file.fieldname) {
+      case 'attachmentFile':
+      case 'completionAttachment':
+      case 'expenseAttachment':
+        destination = UPLOAD_PATHS.attachments;
+        break;
+      case 'contractImage':
+      case 'contractPdf':
+        destination = UPLOAD_PATHS.contracts;
+        break;
+      case 'identityImageFront':
+      case 'identityImageBack':
+        destination = UPLOAD_PATHS.identities;
+        break;
+      case 'checkImage':
+        destination = UPLOAD_PATHS.checks;
+        break;
+      default:
+        destination = UPLOAD_PATHS.attachments;
+    }
+    
+    cb(null, destination);
   },
   filename: (req, file, cb) => {
     const uniqueFileName = `${uuidv4()}${path.extname(file.originalname)}`;

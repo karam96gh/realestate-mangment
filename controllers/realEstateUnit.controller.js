@@ -1,16 +1,412 @@
-// Real Estate Unit controller 
+// controllers/realEstateUnit.controller.js - النسخة المحدثة مع معالجة إنشاء طلب الصيانة
+
 const RealEstateUnit = require('../models/realEstateUnit.model');
 const Building = require('../models/building.model');
 const Company = require('../models/company.model');
 const Reservation = require('../models/reservation.model');
 const ServiceOrder = require('../models/serviceOrder.model');
-
 const User = require('../models/user.model');
 const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
 
+// ✅ دالة مساعدة للتحقق من إنشاء طلب الصيانة يدوياً (في حالة فشل Hook)
+const ensureMaintenanceOrder = async (unitId, transaction = null) => {
+  try {
+    const unit = await RealEstateUnit.findByPk(unitId, { transaction });
+    
+    if (!unit || unit.status !== 'maintenance') {
+      return null;
+    }
+    
+    // البحث عن الحجز النشط
+    const activeReservation = await Reservation.findOne({
+      where: {
+        unitId: unit.id,
+        status: 'active'
+      },
+      transaction
+    });
+    
+    if (!activeReservation) {
+      console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
+      return null;
+    }
+    
+    // التحقق من عدم وجود طلب صيانة مفتوح
+    const existingMaintenanceOrder = await ServiceOrder.findOne({
+      where: {
+        reservationId: activeReservation.id,
+        serviceType: 'maintenance',
+        status: {
+          [Op.in]: ['pending', 'in-progress']
+        }
+      },
+      transaction
+    });
+    
+    if (existingMaintenanceOrder) {
+      console.log(`⚠️ يوجد طلب صيانة مفتوح بالفعل للوحدة ${unit.unitNumber}`);
+      return existingMaintenanceOrder;
+    }
+    
+    // إنشاء طلب صيانة جديد
+    const maintenanceOrder = await ServiceOrder.create({
+      userId: activeReservation.userId,
+      reservationId: activeReservation.id,
+      serviceType: 'maintenance',
+      serviceSubtype: 'general_maintenance',
+      description: `طلب صيانة تلقائي للوحدة ${unit.unitNumber} - تم تحديد حالة الوحدة إلى "تحت الصيانة"`,
+      status: 'pending',
+      serviceHistory: [{
+        status: 'pending',
+        date: new Date().toISOString(),
+        changedBy: 'system',
+        changedByRole: 'system',
+        changedByName: 'النظام الآلي',
+        note: 'طلب صيانة تلقائي عند تحديث حالة الوحدة'
+      }]
+    }, { transaction });
+    
+    console.log(`✅ تم إنشاء طلب صيانة ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
+    return maintenanceOrder;
+    
+  } catch (error) {
+    console.error(`❌ خطأ في إنشاء طلب صيانة للوحدة ${unitId}:`, error);
+    return null;
+  }
+};
+
+// تحديث دالة updateUnit مع معالجة إضافية لطلبات الصيانة
+const updateUnit = catchAsync(async (req, res, next) => {
+  const unit = await RealEstateUnit.findByPk(req.params.id, {
+    include: [{ 
+      model: Building, 
+      as: 'building'
+    }]
+  });
+  
+  if (!unit) {
+    return next(new AppError('الوحدة غير موجودة', 404));
+  }
+  
+  // If user is a manager, verify they belong to the same company
+  if (req.user.role === 'manager') {
+    if (unit.building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بتعديل وحدات لا تنتمي لشركتك', 403));
+    }
+  }
+  
+  const { 
+    buildingId,
+    ownerId,
+    unitNumber, 
+    unitType,
+    unitLayout,
+    floor, 
+    area, 
+    bathrooms,
+    parkingNumber,
+    price, 
+    status, 
+    description 
+  } = req.body;
+  
+  // ✅ تخزين الحالة الأصلية للمقارنة
+  const originalStatus = unit.status;
+  
+  // If buildingId is being updated, check if the new building exists
+  if (buildingId && buildingId !== unit.buildingId) {
+    const building = await Building.findByPk(buildingId);
+    if (!building) {
+      return next(new AppError('المبنى غير موجود', 404));
+    }
+    
+    // If user is a manager, verify the new building belongs to their company
+    if (req.user.role === 'manager' && building.companyId !== req.user.companyId) {
+      return next(new AppError('غير مصرح لك بنقل الوحدة إلى مبنى لا ينتمي لشركتك', 403));
+    }
+  }
+  
+  // Validate owner if being changed
+  let validatedOwnerId = unit.ownerId; // Keep current owner by default
+  if (ownerId !== undefined) { // Allow setting to null or changing owner
+    if (ownerId === null || ownerId === '') {
+      validatedOwnerId = null; // Remove owner
+    } else {
+      const owner = await User.findByPk(ownerId);
+      if (!owner) {
+        return next(new AppError('المالك المحدد غير موجود', 404));
+      }
+      validatedOwnerId = ownerId;
+    }
+  }
+  
+  // Check for duplicate unit number if being changed
+  if (unitNumber && unitNumber !== unit.unitNumber) {
+    const targetBuildingId = buildingId || unit.buildingId;
+    const existingUnit = await RealEstateUnit.findOne({
+      where: {
+        buildingId: targetBuildingId,
+        unitNumber,
+        id: { [Op.ne]: req.params.id } // Exclude current unit
+      }
+    });
+    
+    if (existingUnit) {
+      return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
+    }
+  }
+  
+  if (parkingNumber !== undefined && parkingNumber !== unit.parkingNumber) {
+    if (parkingNumber) {
+      // التحقق من عدم وجود تعارض مع موقف آخر
+      const targetBuildingId = buildingId || unit.buildingId;
+      const existingParkingUnit = await RealEstateUnit.findOne({
+        where: {
+          buildingId: targetBuildingId,
+          parkingNumber,
+          id: { [Op.ne]: req.params.id }
+        }
+      });
+      
+      if (existingParkingUnit) {
+        return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
+      }
+      
+      // التحقق من النطاق المسموح
+      const building = await Building.findByPk(targetBuildingId);
+      const maxParkingNumber = building.internalParkingSpaces;
+      
+      if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
+        return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
+      }
+    }
+  }
+  
+  // Update unit
+  await unit.update({
+    buildingId: buildingId || unit.buildingId,
+    ownerId: validatedOwnerId,
+    unitNumber: unitNumber || unit.unitNumber,
+    unitType: unitType || unit.unitType,
+    unitLayout: unitLayout !== undefined ? unitLayout : unit.unitLayout,
+    floor: floor !== undefined ? floor : unit.floor,
+    area: area !== undefined ? area : unit.area,
+    bathrooms: bathrooms !== undefined ? bathrooms : unit.bathrooms,
+    parkingNumber: parkingNumber !== undefined ? parkingNumber : unit.parkingNumber,
+    price: price !== undefined ? price : unit.price,
+    status: status || unit.status,
+    description: description !== undefined ? description : unit.description
+  });
+  
+  // ✅ التحقق من إنشاء طلب صيانة إضافي (في حالة فشل Hook)
+  if (status === 'maintenance' && originalStatus !== 'maintenance') {
+    console.log(`🔧 التحقق من إنشاء طلب صيانة للوحدة ${unit.unitNumber}...`);
+    
+    // انتظار قصير للسماح للـ Hook بالعمل
+    setTimeout(async () => {
+      const maintenanceOrder = await ensureMaintenanceOrder(unit.id);
+      if (maintenanceOrder) {
+        console.log(`✅ تأكيد: طلب صيانة ${maintenanceOrder.id} جاهز للوحدة ${unit.unitNumber}`);
+      }
+    }, 1000);
+  }
+  
+  // Fetch the updated unit with owner and building details
+  const updatedUnit = await RealEstateUnit.findByPk(req.params.id, {
+    include: [
+      {
+        model: Building,
+        as: 'building',
+        attributes: ['id', 'name', 'address']
+      },
+      {
+        model: User,
+        as: 'owner',
+        attributes: ['id', 'fullName', 'email', 'phone'],
+        required: false
+      }
+    ]
+  });
+  
+  // ✅ إضافة معلومات حول طلب الصيانة في الاستجابة
+  let responseData = {
+    unit: updatedUnit,
+    maintenanceOrderCreated: false
+  };
+  
+  if (status === 'maintenance' && originalStatus !== 'maintenance') {
+    responseData.maintenanceOrderCreated = true;
+    responseData.message = 'تم تحديث حالة الوحدة إلى صيانة وإنشاء طلب صيانة تلقائي';
+  }
+  
+  res.status(200).json({
+    status: 'success',
+    data: responseData
+  });
+});
+
+// ✅ دالة جديدة للحصول على طلبات الصيانة للوحدة
+const getUnitMaintenanceOrders = catchAsync(async (req, res, next) => {
+  const unitId = req.params.id;
+  
+  // التحقق من وجود الوحدة
+  const unit = await RealEstateUnit.findByPk(unitId, {
+    include: [{
+      model: Building,
+      as: 'building'
+    }]
+  });
+  
+  if (!unit) {
+    return next(new AppError('الوحدة غير موجودة', 404));
+  }
+  
+  // التحقق من الصلاحيات
+  if (req.user.role === 'manager' && unit.building.companyId !== req.user.companyId) {
+    return next(new AppError('غير مصرح لك بعرض طلبات صيانة هذه الوحدة', 403));
+  }
+  
+  // البحث عن جميع الحجوزات للوحدة
+  const reservations = await Reservation.findAll({
+    where: { unitId: unit.id },
+    attributes: ['id']
+  });
+  
+  const reservationIds = reservations.map(r => r.id);
+  
+  if (reservationIds.length === 0) {
+    return res.status(200).json({
+      status: 'success',
+      results: 0,
+      data: []
+    });
+  }
+  
+  // البحث عن طلبات الصيانة
+  const maintenanceOrders = await ServiceOrder.findAll({
+    where: {
+      reservationId: { [Op.in]: reservationIds },
+      serviceType: 'maintenance'
+    },
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'fullName', 'phone'] },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'fullName', 'phone']
+        }]
+      }
+    ],
+    order: [['createdAt', 'DESC']]
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    results: maintenanceOrders.length,
+    data: {
+      unit: {
+        id: unit.id,
+        unitNumber: unit.unitNumber,
+        status: unit.status,
+        building: unit.building
+      },
+      maintenanceOrders
+    }
+  });
+});
+
+// ✅ دالة لإنشاء طلب صيانة يدوياً
+const createMaintenanceOrder = catchAsync(async (req, res, next) => {
+  const unitId = req.params.id;
+  const { description, serviceSubtype = 'general_maintenance' } = req.body;
+  
+  // فقط المديرون وعمال الصيانة يمكنهم إنشاء طلبات صيانة يدوياً
+  if (!['admin', 'manager', 'maintenance'].includes(req.user.role)) {
+    return next(new AppError('غير مصرح لك بإنشاء طلبات صيانة', 403));
+  }
+  
+  // التحقق من وجود الوحدة
+  const unit = await RealEstateUnit.findByPk(unitId, {
+    include: [{
+      model: Building,
+      as: 'building'
+    }]
+  });
+  
+  if (!unit) {
+    return next(new AppError('الوحدة غير موجودة', 404));
+  }
+  
+  // التحقق من الصلاحيات للمدير
+  if (req.user.role === 'manager' && unit.building.companyId !== req.user.companyId) {
+    return next(new AppError('غير مصرح لك بإنشاء طلبات صيانة لهذه الوحدة', 403));
+  }
+  
+  // البحث عن الحجز النشط
+  const activeReservation = await Reservation.findOne({
+    where: {
+      unitId: unit.id,
+      status: 'active'
+    }
+  });
+  
+  if (!activeReservation) {
+    return next(new AppError('لا يوجد حجز نشط لهذه الوحدة - لا يمكن إنشاء طلب صيانة', 400));
+  }
+  
+  // إنشاء طلب الصيانة
+  const maintenanceOrder = await ServiceOrder.create({
+    userId: req.user.id, // المستخدم الذي أنشأ الطلب
+    reservationId: activeReservation.id,
+    serviceType: 'maintenance',
+    serviceSubtype,
+    description: description || `طلب صيانة يدوي للوحدة ${unit.unitNumber}`,
+    status: 'pending',
+    serviceHistory: [{
+      status: 'pending',
+      date: new Date().toISOString(),
+      changedBy: req.user.id,
+      changedByRole: req.user.role,
+      changedByName: req.user.fullName || req.user.username,
+      note: 'طلب صيانة يدوي'
+    }]
+  });
+  
+  // تحديث حالة الوحدة إلى صيانة إذا لم تكن كذلك
+  if (unit.status !== 'maintenance') {
+    await unit.update({ status: 'maintenance' });
+  }
+  
+  // إرجاع التفاصيل الكاملة
+  const createdOrder = await ServiceOrder.findByPk(maintenanceOrder.id, {
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'fullName', 'phone'] },
+      { 
+        model: Reservation, 
+        as: 'reservation',
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'fullName', 'phone']
+        }]
+      }
+    ]
+  });
+  
+  res.status(201).json({
+    status: 'success',
+    message: 'تم إنشاء طلب الصيانة بنجاح',
+    data: createdOrder
+  });
+});
+
+// باقي الدوال الموجودة بدون تغيير...
+
 // Get all units
-// تعديل دالة getAllUnits في realEstateUnit.controller.js
 const getAllUnits = catchAsync(async (req, res, next) => {
   // المستأجرون لا يمكنهم رؤية كل الوحدات
   if(req.user.role === 'tenant') {
@@ -143,6 +539,7 @@ const getAllUnits = catchAsync(async (req, res, next) => {
     ...additionalInfo
   });
 });
+
 const getAvailableUnits = catchAsync(async (req, res, next) => {
   try {
     console.log("getAvailableUnits function called");
@@ -459,10 +856,8 @@ const getUnitById = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     data: unitWithCompleteInfo
-    
   });
 });
-
 
 // Create new unit
 const createUnit = catchAsync(async (req, res, next) => {
@@ -476,8 +871,7 @@ const createUnit = catchAsync(async (req, res, next) => {
     area, 
     bathrooms, 
     price, 
-        parkingNumber, // إضافة هذا السطر
-
+    parkingNumber, 
     status, 
     description 
   } = req.body;
@@ -503,11 +897,6 @@ const createUnit = catchAsync(async (req, res, next) => {
       return next(new AppError('المالك المحدد غير موجود', 404));
     }
     
-    // Optional: Add role validation for owner
-    // if (owner.role !== 'tenant' && owner.role !== 'owner') {
-    //   return next(new AppError('المستخدم المحدد لا يمكن أن يكون مالكاً للوحدة', 400));
-    // }
-    
     validatedOwnerId = ownerId;
   }
   
@@ -522,7 +911,8 @@ const createUnit = catchAsync(async (req, res, next) => {
   if (existingUnit) {
     return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
   }
-   if (parkingNumber) {
+  
+  if (parkingNumber) {
     // التحقق من أن رقم الموقف لم يُستخدم من قبل في نفس المبنى
     const existingParkingUnit = await RealEstateUnit.findOne({
       where: {
@@ -534,13 +924,14 @@ const createUnit = catchAsync(async (req, res, next) => {
     if (existingParkingUnit) {
       return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
     }
-    const building = await Building.findByPk(buildingId);
+    
     const maxParkingNumber = building.internalParkingSpaces;
     
     if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
       return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
     }
   }
+  
   const newUnit = await RealEstateUnit.create({
     buildingId,
     ownerId: validatedOwnerId,
@@ -550,8 +941,7 @@ const createUnit = catchAsync(async (req, res, next) => {
     floor,
     area,
     bathrooms,
-        parkingNumber, // إضافة هذا السطر
-
+    parkingNumber, 
     price,
     status: status || 'available',
     description
@@ -579,148 +969,6 @@ const createUnit = catchAsync(async (req, res, next) => {
     data: unitWithDetails
   });
 });
-
-const updateUnit = catchAsync(async (req, res, next) => {
-  const unit = await RealEstateUnit.findByPk(req.params.id, {
-    include: [{ 
-      model: Building, 
-      as: 'building'
-    }]
-  });
-  
-  if (!unit) {
-    return next(new AppError('الوحدة غير موجودة', 404));
-  }
-  
-  // If user is a manager, verify they belong to the same company
-  if (req.user.role === 'manager') {
-    if (unit.building.companyId !== req.user.companyId) {
-      return next(new AppError('غير مصرح لك بتعديل وحدات لا تنتمي لشركتك', 403));
-    }
-  }
-  const { 
-    buildingId,
-    ownerId,
-    unitNumber, 
-    unitType,
-    unitLayout,
-    floor, 
-    area, 
-    bathrooms,
-    parkingNumber, // إضافة هذا السطر
-    price, 
-    status, 
-    description 
-  } = req.body;
-  
-  // If buildingId is being updated, check if the new building exists
-  if (buildingId && buildingId !== unit.buildingId) {
-    const building = await Building.findByPk(buildingId);
-    if (!building) {
-      return next(new AppError('المبنى غير موجود', 404));
-    }
-    
-    // If user is a manager, verify the new building belongs to their company
-    if (req.user.role === 'manager' && building.companyId !== req.user.companyId) {
-      return next(new AppError('غير مصرح لك بنقل الوحدة إلى مبنى لا ينتمي لشركتك', 403));
-    }
-  }
-  
-  // Validate owner if being changed
-  let validatedOwnerId = unit.ownerId; // Keep current owner by default
-  if (ownerId !== undefined) { // Allow setting to null or changing owner
-    if (ownerId === null || ownerId === '') {
-      validatedOwnerId = null; // Remove owner
-    } else {
-      const owner = await User.findByPk(ownerId);
-      if (!owner) {
-        return next(new AppError('المالك المحدد غير موجود', 404));
-      }
-      validatedOwnerId = ownerId;
-    }
-  }
-  
-  // Check for duplicate unit number if being changed
-  if (unitNumber && unitNumber !== unit.unitNumber) {
-    const targetBuildingId = buildingId || unit.buildingId;
-    const existingUnit = await RealEstateUnit.findOne({
-      where: {
-        buildingId: targetBuildingId,
-        unitNumber,
-        id: { [Op.ne]: req.params.id } // Exclude current unit
-      }
-    });
-    
-    if (existingUnit) {
-      return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
-    }
-  }
-    if (parkingNumber !== undefined && parkingNumber !== unit.parkingNumber) {
-    if (parkingNumber) {
-      // التحقق من عدم وجود تعارض مع موقف آخر
-      const targetBuildingId = buildingId || unit.buildingId;
-      const existingParkingUnit = await RealEstateUnit.findOne({
-        where: {
-          buildingId: targetBuildingId,
-          parkingNumber,
-          id: { [Op.ne]: req.params.id }
-        }
-      });
-      
-      if (existingParkingUnit) {
-        return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
-      }
-      
-      // التحقق من النطاق المسموح
-      const building = await Building.findByPk(targetBuildingId);
-      const maxParkingNumber = building.internalParkingSpaces;
-      
-      if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
-        return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
-      }
-    }
-  }
-  
-  // Update unit
-  await unit.update({
-    buildingId: buildingId || unit.buildingId,
-    ownerId: validatedOwnerId,
-    unitNumber: unitNumber || unit.unitNumber,
-    unitType: unitType || unit.unitType,
-    unitLayout: unitLayout !== undefined ? unitLayout : unit.unitLayout,
-    floor: floor !== undefined ? floor : unit.floor,
-    area: area !== undefined ? area : unit.area,
-    bathrooms: bathrooms !== undefined ? bathrooms : unit.bathrooms,
-    parkingNumber: parkingNumber !== undefined ? parkingNumber : unit.parkingNumber, // إضافة هذا السطر
-    price: price !== undefined ? price : unit.price,
-    status: status || unit.status,
-    description: description !== undefined ? description : unit.description
-  });
-  
-  // Fetch the updated unit with owner and building details
-  const updatedUnit = await RealEstateUnit.findByPk(req.params.id, {
-    include: [
-      {
-        model: Building,
-        as: 'building',
-        attributes: ['id', 'name', 'address']
-      },
-      {
-        model: User,
-        as: 'owner',
-        attributes: ['id', 'fullName', 'email', 'phone'],
-        required: false
-      }
-    ]
-  });
-  
-  res.status(200).json({
-    status: 'success',
-    data: updatedUnit
-  });
-});
-
-
 
 // Delete unit
 const deleteUnit = catchAsync(async (req, res, next) => {
@@ -758,7 +1006,6 @@ const getUnitsByBuildingId = catchAsync(async (req, res, next) => {
     data: units
   });
 });
-// إضافة هذه الدالة في نهاية الملف قبل module.exports
 
 // Get available parking spots for a building
 const getAvailableParkingSpots = catchAsync(async (req, res, next) => {
@@ -813,8 +1060,6 @@ const getAvailableParkingSpots = catchAsync(async (req, res, next) => {
   });
 });
 
-
-
 module.exports = {
   getAllUnits,
   getUnitById,
@@ -823,5 +1068,9 @@ module.exports = {
   deleteUnit,
   getUnitsByBuildingId,
   getAvailableUnits,
-  getAvailableParkingSpots
+  getAvailableParkingSpots,
+  // ✅ الدوال الجديدة للصيانة
+  getUnitMaintenanceOrders,
+  createMaintenanceOrder,
+  ensureMaintenanceOrder
 };

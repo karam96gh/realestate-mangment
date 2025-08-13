@@ -1,10 +1,12 @@
-// Real Estate Unit routes 
+// routes/realEstateUnit.routes.js - تحديث لإضافة المسارات الجديدة
+
 const express = require('express');
 const router = express.Router();
 const realEstateUnitController = require('../controllers/realEstateUnit.controller');
 const authMiddleware = require('../middleware/auth.middleware');
-const { isAdminOrManager, isAdminOrManagerOrOwner, isAdminOrManagerOrMaintenanceOrAccountant } = require('../middleware/role.middleware');
+const { isAdminOrManager, isAdminOrManagerOrOwner, isAdminOrManagerOrMaintenanceOrAccountant, isAdminOrManagerOrMaintenance } = require('../middleware/role.middleware');
 const { validate, unitValidationRules } = require('../middleware/validation.middleware');
+
 // Protected routes
 router.use(authMiddleware);
 router.get('/:id', realEstateUnitController.getUnitById);
@@ -17,9 +19,11 @@ router.get('/parking/available/:buildingId', realEstateUnitController.getAvailab
 router.get('/unit-building/available', realEstateUnitController.getAvailableUnits);
 router.get('/building/:buildingId', realEstateUnitController.getUnitsByBuildingId);
 
+// ✅ المسارات الجديدة للصيانة
+router.get('/:id/maintenance-orders', isAdminOrManagerOrMaintenance, realEstateUnitController.getUnitMaintenanceOrders);
+router.post('/:id/create-maintenance-order', isAdminOrManagerOrMaintenance, realEstateUnitController.createMaintenanceOrder);
+
 // Protected routes
-
-
 // Create unit
 router.post(
   '/',
@@ -31,8 +35,6 @@ router.post(
 // Update unit
 router.put(
   '/:id',
-//   unitValidationRules,
-//   validate,
   realEstateUnitController.updateUnit
 );
 

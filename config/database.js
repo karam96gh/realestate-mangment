@@ -4,7 +4,7 @@ const { Sequelize } = require('sequelize');
 const sequelize = new Sequelize(
     'realeestate_mangment',
   'root',
-  '',
+  'RIN9MQ3zK5S2uhdO',
   {
     host: '127.0.0.1',
     dialect: 'mysql',

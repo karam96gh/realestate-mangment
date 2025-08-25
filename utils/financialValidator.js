@@ -59,8 +59,8 @@ const checkOutstandingPayments = async (reservationId, userId) => {
       const unpaidExpenses = await Expense.findAll({
         where: {
           [Op.or]: [
-            { unitId: reservation.unitId },
-            { buildingId: reservation.unit.buildingId }
+            { unitId: reservation.unitId }
+          
           ],
           responsibleParty: 'tenant',
           // يمكن إضافة شرط للتحقق من عدم الدفع إذا كان هناك نظام لتتبع دفع المصاريف

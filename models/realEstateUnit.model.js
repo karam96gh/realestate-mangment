@@ -77,14 +77,16 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
   }
-}, {
+}, // استبدل الـ hooks section في models/realEstateUnit.model.js
+
+{
   hooks: {
     // ✅ إنشاء طلب صيانة عند تحديث حالة الوحدة إلى صيانة
     afterUpdate: async (unit, options) => {
       try {
         // التحقق من تغيير الحالة إلى maintenance
         if (unit.changed('status') && unit.status === 'maintenance') {
-          console.log(`🔧 إنشاء طلب صيانة للوحدة ${unit.unitNumber}...`);
+          console.log(`🔧 Hook: إنشاء طلب صيانة للوحدة ${unit.unitNumber}...`);
           
           // استيراد النماذج المطلوبة (تجنب المراجع الدائرية)
           const Reservation = require('./reservation.model');
@@ -100,7 +102,7 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
           });
           
           if (!activeReservation) {
-            console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
+            console.log(`⚠️ Hook: لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
             return;
           }
           
@@ -117,8 +119,8 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
           });
           
           if (existingMaintenanceOrder) {
-            console.log(`⚠️ يوجد طلب صيانة مفتوح بالفعل للوحدة ${unit.unitNumber}`);
-            return;
+            console.log(`⚠️ Hook: يوجد طلب صيانة مفتوح بالفعل (${existingMaintenanceOrder.id}) للوحدة ${unit.unitNumber}`);
+            return existingMaintenanceOrder;
           }
           
           // إنشاء طلب صيانة جديد
@@ -139,7 +141,7 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             }]
           }, { transaction: options.transaction });
           
-          console.log(`✅ تم إنشاء طلب صيانة ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
+          console.log(`✅ Hook: تم إنشاء طلب صيانة ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
           
           // تسجيل في الـ audit log إذا كان متاحاً
           try {
@@ -149,16 +151,31 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
               unitNumber: unit.unitNumber,
               serviceOrderId: maintenanceOrder.id,
               reservationId: activeReservation.id,
-              reason: 'Unit status changed to maintenance'
+              reason: 'Unit status changed to maintenance',
+              triggeredBy: 'afterUpdate hook'
             });
           } catch (logError) {
             // تجاهل أخطاء التسجيل
-            console.log('تحذير: فشل في تسجيل العملية في audit log');
+            console.log('تحذير Hook: فشل في تسجيل العملية في audit log');
           }
+
+          return maintenanceOrder;
         }
       } catch (error) {
-        console.error(`❌ خطأ في إنشاء طلب صيانة للوحدة ${unit.id}:`, error);
-        // عدم رمي الخطأ لتجنب توقف العملية الأساسية
+        console.error(`❌ Hook: خطأ في إنشاء طلب صيانة للوحدة ${unit.id}:`, error);
+        // ✅ عدم رمي الخطأ لتجنب توقف العملية الأساسية
+        // لكن نسجل الخطأ للمراجعة اللاحقة
+        try {
+          const { auditLog } = require('../utils/logger');
+          auditLog('AUTO_MAINTENANCE_ORDER_FAILED', 'system', {
+            unitId: unit.id,
+            unitNumber: unit.unitNumber || 'unknown',
+            error: error.message,
+            reason: 'Hook execution failed'
+          });
+        } catch (logError) {
+          // تجاهل حتى أخطاء التسجيل
+        }
       }
     }
   }

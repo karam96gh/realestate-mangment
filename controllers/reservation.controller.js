@@ -64,15 +64,16 @@ const getMyReservations = catchAsync(async (req, res) => {
   });
 });
 
-// ✅ تحديث دالة updateReservation مع التحقق المالي عند الإلغاء
+// استبدل دالة updateReservation في controllers/reservation.controller.js بهذه النسخة
+
 const updateReservation = catchAsync(async (req, res, next) => {
   const { 
     contractType,
     startDate, 
     endDate, 
     status, 
-    paymentMethod,
-    paymentSchedule,
+    paymentMethod,      // ✅ سيتم تجاهل هذا الحقل
+    paymentSchedule,    // ✅ سيتم تجاهل هذا الحقل
     
     // حقول التأمين المحدثة
     includesDeposit,
@@ -109,6 +110,23 @@ const updateReservation = catchAsync(async (req, res, next) => {
   
   console.log('الحالة الأصلية للحجز:', originalStatus);
   console.log('الحالة الجديدة:', status);
+
+  // ✅ التحقق من محاولة تعديل طريقة الدفع أو آلية الدفع
+  if (paymentMethod && paymentMethod !== reservation.paymentMethod) {
+    return next(new AppError(
+      'لا يمكن تعديل طريقة الدفع بعد إنشاء الحجز. طريقة الدفع الحالية: ' + 
+      (reservation.paymentMethod === 'cash' ? 'نقدي' : 'شيكات'), 
+      400
+    ));
+  }
+
+  if (paymentSchedule && paymentSchedule !== reservation.paymentSchedule) {
+    return next(new AppError(
+      'لا يمكن تعديل آلية الدفع بعد إنشاء الحجز. آلية الدفع الحالية: ' + 
+      getPaymentScheduleArabic(reservation.paymentSchedule), 
+      400
+    ));
+  }
   
   // ✅ التحقق المالي قبل الإلغاء
   if (status === 'cancelled' && originalStatus !== 'cancelled') {
@@ -182,15 +200,16 @@ const updateReservation = catchAsync(async (req, res, next) => {
     }
   }
   
-  // تحضير بيانات التحديث
+  // تحضير بيانات التحديث (بدون paymentMethod و paymentSchedule)
   const updateData = {
     contractType: contractType || reservation.contractType,
     startDate: startDate || reservation.startDate,
     endDate: endDate || reservation.endDate,
     contractImage,
     contractPdf,
-    paymentMethod: paymentMethod || reservation.paymentMethod,
-    paymentSchedule: paymentSchedule || reservation.paymentSchedule,
+    // ✅ إزالة paymentMethod و paymentSchedule من التحديث
+    // paymentMethod: paymentMethod || reservation.paymentMethod,
+    // paymentSchedule: paymentSchedule || reservation.paymentSchedule,
     status: status || reservation.status,
     notes: notes !== undefined ? notes : reservation.notes
   };
@@ -257,11 +276,23 @@ const updateReservation = catchAsync(async (req, res, next) => {
     
     await transaction.commit();
     
+    // ✅ إضافة رسالة توضيحية إذا حاول المستخدم تعديل طريقة الدفع
+    let warningMessage = null;
+    if (paymentMethod && paymentMethod !== reservation.paymentMethod) {
+      warningMessage = 'تم تجاهل محاولة تعديل طريقة الدفع - غير مسموح بعد إنشاء الحجز';
+    }
+    if (paymentSchedule && paymentSchedule !== reservation.paymentSchedule) {
+      warningMessage = warningMessage ? 
+        warningMessage + ' وآلية الدفع' : 
+        'تم تجاهل محاولة تعديل آلية الدفع - غير مسموح بعد إنشاء الحجز';
+    }
+    
     console.log(`📝 تم تحديث الحجز ${reservation.id} من ${originalStatus} إلى ${status || originalStatus}`);
     
     res.status(200).json({
       status: 'success',
       message: status === 'cancelled' ? 'تم إلغاء الحجز وتعطيل حساب المستأجر بنجاح' : 'تم تحديث الحجز بنجاح',
+      warning: warningMessage,
       data: reservation
     });
     
@@ -271,6 +302,18 @@ const updateReservation = catchAsync(async (req, res, next) => {
     throw error;
   }
 });
+
+// ✅ دالة مساعدة لترجمة آلية الدفع
+const getPaymentScheduleArabic = (schedule) => {
+  const schedules = {
+    'monthly': 'شهري',
+    'quarterly': 'ربع سنوي',
+    'triannual': 'ثلاث دفعات سنوياً',
+    'biannual': 'نصف سنوي',
+    'annual': 'سنوي'
+  };
+  return schedules[schedule] || schedule;
+};
 
 // ✅ دالة جديدة للتحقق من المستحقات المالية قبل الإلغاء
 const checkFinancialStatus = catchAsync(async (req, res, next) => {

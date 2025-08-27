@@ -77,6 +77,9 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
 };
 
 // تحديث دالة updateUnit مع معالجة إضافية لطلبات الصيانة
+// إضافة هذا التحقق في دالة updateUnit في controllers/realEstateUnit.controller.js
+// استبدل الدالة updateUnit الحالية بهذه النسخة المحدثة
+
 const updateUnit = catchAsync(async (req, res, next) => {
   const unit = await RealEstateUnit.findByPk(req.params.id, {
     include: [{ 
@@ -110,6 +113,64 @@ const updateUnit = catchAsync(async (req, res, next) => {
     status, 
     description 
   } = req.body;
+  
+  // ✅ التحقق من حالة الوحدة قبل السماح بالتحديث
+  if (status && status !== unit.status) {
+    // التحقق من وجود حجز نشط للوحدة
+    const activeReservation = await Reservation.findOne({
+      where: {
+        unitId: unit.id,
+        status: 'active',
+        startDate: { [Op.lte]: new Date() },
+        endDate: { [Op.gte]: new Date() }
+      }
+    });
+
+    if (activeReservation) {
+      // إذا كانت الوحدة مؤجرة حالياً، لا يمكن تغيير الحالة إلا إلى صيانة
+      if (unit.status === 'rented' && status !== 'maintenance') {
+        return next(new AppError(
+          'لا يمكن تغيير حالة الوحدة المؤجرة إلا إلى "تحت الصيانة". العقد نشط حتى ' + 
+          activeReservation.endDate, 
+          400
+        ));
+      }
+
+      // إذا كانت الوحدة تحت الصيانة وهناك عقد نشط، لا يمكن تحويلها إلى متاحة
+      if (unit.status === 'maintenance' && status === 'available') {
+        return next(new AppError(
+          'لا يمكن تحويل الوحدة إلى "متاحة" أثناء وجود عقد نشط. العقد ينتهي في ' + 
+          activeReservation.endDate, 
+          400
+        ));
+      }
+
+      // السماح فقط بالتحويل من rented إلى maintenance أو من maintenance إلى rented
+      if (unit.status === 'rented' && status === 'maintenance') {
+        console.log(`✅ تم السماح بتحويل الوحدة ${unit.unitNumber} من مؤجرة إلى صيانة`);
+      } else if (unit.status === 'maintenance' && status === 'rented') {
+        console.log(`✅ تم السماح بتحويل الوحدة ${unit.unitNumber} من صيانة إلى مؤجرة`);
+      }
+    }
+
+    // إذا لم يكن هناك حجز نشط، التحقق من حجوزات منتهية لم يتم تحديث حالتها
+    if (!activeReservation && unit.status === 'rented') {
+      const expiredReservation = await Reservation.findOne({
+        where: {
+          unitId: unit.id,
+          status: { [Op.in]: ['active', 'expired'] },
+          endDate: { [Op.lt]: new Date() }
+        },
+        order: [['endDate', 'DESC']]
+      });
+
+      if (expiredReservation && expiredReservation.status === 'active') {
+        // تحديث الحجز المنتهي تلقائياً
+        await expiredReservation.update({ status: 'expired' });
+        console.log(`🔄 تم تحديث حالة الحجز ${expiredReservation.id} إلى منتهي`);
+      }
+    }
+  }
   
   // ✅ تخزين الحالة الأصلية للمقارنة
   const originalStatus = unit.status;
@@ -245,7 +306,6 @@ const updateUnit = catchAsync(async (req, res, next) => {
     data: responseData
   });
 });
-
 // ✅ دالة جديدة للحصول على طلبات الصيانة للوحدة
 const getUnitMaintenanceOrders = catchAsync(async (req, res, next) => {
   const unitId = req.params.id;

@@ -19,18 +19,18 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
     }
     
     // البحث عن الحجز النشط
-    const activeReservation = await Reservation.findOne({
-      where: {
-        unitId: unit.id,
-        status: 'active'
-      },
-      transaction
-    });
+    // const activeReservation = await Reservation.findOne({
+    //   where: {
+    //     unitId: unit.id,
+    //     status: 'active'
+    //   },
+    //   transaction
+    // });
     
-    if (!activeReservation) {
-      console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
-      return null;
-    }
+    // if (!activeReservation) {
+    //   console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
+    //   return null;
+    // }
     
     // التحقق من عدم وجود طلب صيانة مفتوح
     const existingMaintenanceOrder = await ServiceOrder.findOne({
@@ -229,10 +229,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
           id: { [Op.ne]: req.params.id }
         }
       });
-      
-      if (existingParkingUnit) {
-        return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
-      }
+
       
       // التحقق من النطاق المسموح
       const building = await Building.findByPk(targetBuildingId);

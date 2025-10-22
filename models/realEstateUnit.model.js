@@ -87,12 +87,12 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
         // التحقق من تغيير الحالة إلى maintenance
         if (unit.changed('status') && unit.status === 'maintenance') {
           console.log(`🔧 Hook: إنشاء طلب صيانة للوحدة ${unit.unitNumber}...`);
-          
+
           // استيراد النماذج المطلوبة (تجنب المراجع الدائرية)
           const Reservation = require('./reservation.model');
           const ServiceOrder = require('./serviceOrder.model');
-          
-          // البحث عن الحجز النشط للوحدة
+
+          // البحث عن الحجز النشط للوحدة (اختياري)
           const activeReservation = await Reservation.findOne({
             where: {
               unitId: unit.id,
@@ -100,33 +100,49 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             },
             transaction: options.transaction
           });
-          
-          if (!activeReservation) {
-            console.log(`⚠️ Hook: لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
-            return;
+
+          // تحديد المستخدم والحجز (إذا كان موجوداً)
+          const userId = activeReservation ? activeReservation.userId : null;
+          const reservationId = activeReservation ? activeReservation.id : null;
+
+          // التحقق من عدم وجود طلب صيانة مفتوح بالفعل للوحدة
+          const whereCondition = {
+            serviceType: 'maintenance',
+            status: {
+              [sequelize.Sequelize.Op.in]: ['pending', 'in-progress']
+            }
+          };
+
+          // إذا كان هناك حجز نشط، نبحث حسب الحجز، وإلا نبحث حسب الوحدة
+          if (reservationId) {
+            whereCondition.reservationId = reservationId;
+          } else {
+            // البحث عن أي طلب صيانة مفتوح للوحدة عبر جميع حجوزاتها
+            const unitReservations = await Reservation.findAll({
+              where: { unitId: unit.id },
+              attributes: ['id'],
+              transaction: options.transaction
+            });
+
+            if (unitReservations.length > 0) {
+              whereCondition.reservationId = {
+                [sequelize.Sequelize.Op.in]: unitReservations.map(r => r.id)
+              };
+            }
           }
-          
-          // التحقق من عدم وجود طلب صيانة مفتوح بالفعل
+
           const existingMaintenanceOrder = await ServiceOrder.findOne({
-            where: {
-              reservationId: activeReservation.id,
-              serviceType: 'maintenance',
-              status: {
-                [sequelize.Sequelize.Op.in]: ['pending', 'in-progress']
-              }
-            },
+            where: whereCondition,
             transaction: options.transaction
           });
-          
+
           if (existingMaintenanceOrder) {
             console.log(`⚠️ Hook: يوجد طلب صيانة مفتوح بالفعل (${existingMaintenanceOrder.id}) للوحدة ${unit.unitNumber}`);
             return existingMaintenanceOrder;
           }
-          
+
           // إنشاء طلب صيانة دورية جديد
-          const maintenanceOrder = await ServiceOrder.create({
-            userId: activeReservation.userId,
-            reservationId: activeReservation.id,
+          const orderData = {
             serviceType: 'maintenance',
             serviceSubtype: 'periodic_maintenance',
             description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
@@ -137,12 +153,20 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
               changedBy: 'system',
               changedByRole: 'system',
               changedByName: 'النظام الآلي',
-              note: 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
+              note: activeReservation
+                ? 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
+                : 'طلب صيانة دورية تلقائي للوحدة غير المحجوزة'
             }]
-          }, { transaction: options.transaction });
-          
+          };
+
+          // إضافة معلومات المستخدم والحجز إذا كانت متوفرة
+          if (userId) orderData.userId = userId;
+          if (reservationId) orderData.reservationId = reservationId;
+
+          const maintenanceOrder = await ServiceOrder.create(orderData, { transaction: options.transaction });
+
           console.log(`✅ Hook: تم إنشاء طلب صيانة ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
-          
+
           // تسجيل في الـ audit log إذا كان متاحاً
           try {
             const { auditLog } = require('../utils/logger');
@@ -150,7 +174,8 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
               unitId: unit.id,
               unitNumber: unit.unitNumber,
               serviceOrderId: maintenanceOrder.id,
-              reservationId: activeReservation.id,
+              reservationId: reservationId,
+              hasActiveReservation: !!activeReservation,
               reason: 'Unit status changed to maintenance',
               triggeredBy: 'afterUpdate hook'
             });

@@ -18,7 +18,7 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       return null;
     }
 
-    // البحث عن الحجز النشط
+    // البحث عن الحجز النشط (اختياري)
     const activeReservation = await Reservation.findOne({
       where: {
         unitId: unit.id,
@@ -27,20 +27,36 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       transaction
     });
 
-    if (!activeReservation) {
-      console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
-      return null;
+    const userId = activeReservation ? activeReservation.userId : null;
+    const reservationId = activeReservation ? activeReservation.id : null;
+
+    // التحقق من عدم وجود طلب صيانة مفتوح للوحدة
+    const whereCondition = {
+      serviceType: 'maintenance',
+      status: {
+        [Op.in]: ['pending', 'in-progress']
+      }
+    };
+
+    if (reservationId) {
+      whereCondition.reservationId = reservationId;
+    } else {
+      // البحث عن أي طلب صيانة مفتوح للوحدة عبر جميع حجوزاتها
+      const unitReservations = await Reservation.findAll({
+        where: { unitId: unit.id },
+        attributes: ['id'],
+        transaction
+      });
+
+      if (unitReservations.length > 0) {
+        whereCondition.reservationId = {
+          [Op.in]: unitReservations.map(r => r.id)
+        };
+      }
     }
 
-    // التحقق من عدم وجود طلب صيانة مفتوح
     const existingMaintenanceOrder = await ServiceOrder.findOne({
-      where: {
-        reservationId: activeReservation.id,
-        serviceType: 'maintenance',
-        status: {
-          [Op.in]: ['pending', 'in-progress']
-        }
-      },
+      where: whereCondition,
       transaction
     });
 
@@ -50,9 +66,7 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
     }
 
     // إنشاء طلب صيانة دورية جديد
-    const maintenanceOrder = await ServiceOrder.create({
-      userId: activeReservation.userId,
-      reservationId: activeReservation.id,
+    const orderData = {
       serviceType: 'maintenance',
       serviceSubtype: 'periodic_maintenance',
       description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
@@ -63,9 +77,16 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
         changedBy: 'system',
         changedByRole: 'system',
         changedByName: 'النظام الآلي',
-        note: 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
+        note: activeReservation
+          ? 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
+          : 'طلب صيانة دورية تلقائي للوحدة غير المحجوزة'
       }]
-    }, { transaction });
+    };
+
+    if (userId) orderData.userId = userId;
+    if (reservationId) orderData.reservationId = reservationId;
+
+    const maintenanceOrder = await ServiceOrder.create(orderData, { transaction });
 
     console.log(`✅ تم إنشاء طلب صيانة دورية ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
     return maintenanceOrder;

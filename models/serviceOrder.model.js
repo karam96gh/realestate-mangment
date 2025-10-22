@@ -14,19 +14,21 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
   },
   userId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: User,
       key: 'id'
-    }
+    },
+    comment: 'معرف المستخدم - اختياري للطلبات التلقائية'
   },
   reservationId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: Reservation,
       key: 'id'
-    }
+    },
+    comment: 'معرف الحجز - اختياري للطلبات التلقائية للوحدات غير المحجوزة'
   },
   serviceType: {
     type: DataTypes.ENUM('financial', 'maintenance', 'administrative'),

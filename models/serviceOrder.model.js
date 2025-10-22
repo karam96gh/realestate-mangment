@@ -4,6 +4,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const User = require('./user.model');
 const Reservation = require('./reservation.model');
+const RealEstateUnit = require('./realEstateUnit.model');
 const { getFileUrl } = require('../utils/filePath');
 
 const ServiceOrder = sequelize.define('ServiceOrder', {
@@ -29,6 +30,11 @@ const ServiceOrder = sequelize.define('ServiceOrder', {
       key: 'id'
     },
     comment: 'معرف الحجز - اختياري للطلبات التلقائية للوحدات غير المحجوزة'
+  },
+  unitId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'معرف الوحدة - للربط المباشر بالوحدة (خاصة للطلبات التلقائية)'
   },
   serviceType: {
     type: DataTypes.ENUM('financial', 'maintenance', 'administrative'),
@@ -117,5 +123,8 @@ User.hasMany(ServiceOrder, { foreignKey: 'userId', as: 'serviceOrders' });
 
 ServiceOrder.belongsTo(Reservation, { foreignKey: 'reservationId', as: 'reservation' });
 Reservation.hasMany(ServiceOrder, { foreignKey: 'reservationId', as: 'serviceOrders' });
+
+ServiceOrder.belongsTo(RealEstateUnit, { foreignKey: 'unitId', as: 'unit' });
+RealEstateUnit.hasMany(ServiceOrder, { foreignKey: 'unitId', as: 'serviceOrders' });
 
 module.exports = ServiceOrder;

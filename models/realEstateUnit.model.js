@@ -102,7 +102,7 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
           });
 
           // تحديد المستخدم والحجز (إذا كان موجوداً)
-          const userId = activeReservation ? activeReservation.userId : null;
+          const userId = activeReservation ? activeReservation.userId : (options.updatedBy || null);
           const reservationId = activeReservation ? activeReservation.id : null;
 
           // التحقق من عدم وجود طلب صيانة مفتوح بالفعل للوحدة
@@ -113,11 +113,11 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             }
           };
 
-          // إذا كان هناك حجز نشط، نبحث حسب الحجز، وإلا نبحث حسب الوحدة
+          // البحث عن طلبات صيانة مفتوحة للوحدة (سواء مرتبطة بحجز أو مباشرة)
           if (reservationId) {
             whereCondition.reservationId = reservationId;
           } else {
-            // البحث عن أي طلب صيانة مفتوح للوحدة عبر جميع حجوزاتها
+            // البحث في الطلبات المرتبطة مباشرة بالوحدة أو عبر حجوزاتها
             const unitReservations = await Reservation.findAll({
               where: { unitId: unit.id },
               attributes: ['id'],
@@ -125,9 +125,12 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             });
 
             if (unitReservations.length > 0) {
-              whereCondition.reservationId = {
-                [sequelize.Sequelize.Op.in]: unitReservations.map(r => r.id)
-              };
+              whereCondition[sequelize.Sequelize.Op.or] = [
+                { reservationId: { [sequelize.Sequelize.Op.in]: unitReservations.map(r => r.id) } },
+                { unitId: unit.id }
+              ];
+            } else {
+              whereCondition.unitId = unit.id;
             }
           }
 
@@ -143,6 +146,7 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
 
           // إنشاء طلب صيانة دورية جديد
           const orderData = {
+            unitId: unit.id,  // ← إضافة معرف الوحدة
             serviceType: 'maintenance',
             serviceSubtype: 'periodic_maintenance',
             description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
@@ -150,9 +154,9 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             serviceHistory: [{
               status: 'pending',
               date: new Date().toISOString(),
-              changedBy: 'system',
-              changedByRole: 'system',
-              changedByName: 'النظام الآلي',
+              changedBy: options.updatedBy || 'system',  // ← استخدام updatedBy من options
+              changedByRole: options.updatedBy ? 'manager' : 'system',
+              changedByName: options.updatedBy ? 'المدير' : 'النظام الآلي',
               note: activeReservation
                 ? 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
                 : 'طلب صيانة دورية تلقائي للوحدة غير المحجوزة'

@@ -10,7 +10,7 @@ const { catchAsync, AppError } = require('../utils/errorHandler');
 const { Op } = require('sequelize');
 
 // ✅ دالة مساعدة للتحقق من إنشاء طلب الصيانة يدوياً (في حالة فشل Hook)
-const ensureMaintenanceOrder = async (unitId, transaction = null) => {
+const ensureMaintenanceOrder = async (unitId, updatedBy = null, transaction = null) => {
   try {
     const unit = await RealEstateUnit.findByPk(unitId, { transaction });
 
@@ -27,7 +27,7 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       transaction
     });
 
-    const userId = activeReservation ? activeReservation.userId : null;
+    const userId = activeReservation ? activeReservation.userId : (updatedBy || null);
     const reservationId = activeReservation ? activeReservation.id : null;
 
     // التحقق من عدم وجود طلب صيانة مفتوح للوحدة
@@ -38,10 +38,10 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       }
     };
 
+    // البحث عن طلبات صيانة مفتوحة (مرتبطة بحجز أو بالوحدة مباشرة)
     if (reservationId) {
       whereCondition.reservationId = reservationId;
     } else {
-      // البحث عن أي طلب صيانة مفتوح للوحدة عبر جميع حجوزاتها
       const unitReservations = await Reservation.findAll({
         where: { unitId: unit.id },
         attributes: ['id'],
@@ -49,9 +49,12 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       });
 
       if (unitReservations.length > 0) {
-        whereCondition.reservationId = {
-          [Op.in]: unitReservations.map(r => r.id)
-        };
+        whereCondition[Op.or] = [
+          { reservationId: { [Op.in]: unitReservations.map(r => r.id) } },
+          { unitId: unit.id }
+        ];
+      } else {
+        whereCondition.unitId = unit.id;
       }
     }
 
@@ -67,6 +70,7 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
 
     // إنشاء طلب صيانة دورية جديد
     const orderData = {
+      unitId: unit.id,  // ← إضافة معرف الوحدة
       serviceType: 'maintenance',
       serviceSubtype: 'periodic_maintenance',
       description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
@@ -74,9 +78,9 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       serviceHistory: [{
         status: 'pending',
         date: new Date().toISOString(),
-        changedBy: 'system',
-        changedByRole: 'system',
-        changedByName: 'النظام الآلي',
+        changedBy: updatedBy || 'system',
+        changedByRole: updatedBy ? 'manager' : 'system',
+        changedByName: updatedBy ? 'المدير' : 'النظام الآلي',
         note: activeReservation
           ? 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
           : 'طلب صيانة دورية تلقائي للوحدة غير المحجوزة'
@@ -279,7 +283,7 @@ const updateUnit = catchAsync(async (req, res, next) => {
     }
   }
   
-  // Update unit
+  // Update unit - تمرير معلومات المستخدم للـ hook
   await unit.update({
     buildingId: buildingId || unit.buildingId,
     ownerId: validatedOwnerId,
@@ -293,6 +297,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
     price: price !== undefined ? price : unit.price,
     status: status || unit.status,
     description: description !== undefined ? description : unit.description
+  }, {
+    updatedBy: req.user.id  // ← تمرير معرف المستخدم للـ hook
   });
   
   // ✅ Hook سيقوم بإنشاء طلب الصيانة تلقائياً عند تحديث الحالة

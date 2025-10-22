@@ -323,18 +323,14 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
       where: { unitId: { [Op.in]: unitIds } },
       attributes: ['id']
     }).then(reservations => reservations.map(reservation => reservation.id));
-    
-    if (reservationIds.length === 0) {
-      return res.status(200).json({
-        status: 'success',
-        results: 0,
-        data: []
-      });
-    }
-    
+
     // تحديد حالة البحث لطلبات الخدمة
-    whereCondition.reservationId = { [Op.in]: reservationIds };
-    
+    // ✅ البحث في الطلبات المرتبطة بحجز أو المرتبطة مباشرة بالوحدة
+    whereCondition[Op.or] = [
+      { reservationId: { [Op.in]: reservationIds } },  // طلبات مرتبطة بحجز
+      { unitId: { [Op.in]: unitIds } }  // ✅ طلبات تلقائية مرتبطة بالوحدة مباشرة
+    ];
+
     // إضافة تصفية نوع الخدمة حسب دور المستخدم
     if (req.user.role === 'maintenance') {
       // عامل الصيانة يرى طلبات الصيانة فقط
@@ -345,15 +341,16 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
     }
     // المدير يرى جميع الطلبات (لا نضيف تصفية إضافية)
   }
-  
+
   // الاستعلام عن طلبات الخدمة مع تضمين جميع المعلومات المطلوبة
   const serviceOrders = await ServiceOrder.findAll({
     where: whereCondition,
     include: [
-      { model: User, as: 'user', attributes: { exclude: ['password'] } },
-      { 
-        model: Reservation, 
+      { model: User, as: 'user', attributes: { exclude: ['password'] }, required: false },  // ✅ required: false للطلبات التلقائية بدون user
+      {
+        model: Reservation,
         as: 'reservation',
+        required: false,  // ✅ required: false للطلبات التلقائية بدون حجز
         include: [{
           model: RealEstateUnit,
           as: 'unit',
@@ -362,6 +359,17 @@ const getAllServiceOrders = catchAsync(async (req, res, next) => {
             as: 'building',
             include: [{ model: Company, as: 'company' }]
           }]
+        }]
+      },
+      {
+        // ✅ إضافة relation مباشر مع الوحدة للطلبات التلقائية
+        model: RealEstateUnit,
+        as: 'unit',
+        required: false,
+        include: [{
+          model: Building,
+          as: 'building',
+          include: [{ model: Company, as: 'company' }]
         }]
       }
     ],

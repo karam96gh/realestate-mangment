@@ -13,25 +13,25 @@ const { Op } = require('sequelize');
 const ensureMaintenanceOrder = async (unitId, transaction = null) => {
   try {
     const unit = await RealEstateUnit.findByPk(unitId, { transaction });
-    
+
     if (!unit || unit.status !== 'maintenance') {
       return null;
     }
-    
+
     // البحث عن الحجز النشط
-    // const activeReservation = await Reservation.findOne({
-    //   where: {
-    //     unitId: unit.id,
-    //     status: 'active'
-    //   },
-    //   transaction
-    // });
-    
-    // if (!activeReservation) {
-    //   console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
-    //   return null;
-    // }
-    
+    const activeReservation = await Reservation.findOne({
+      where: {
+        unitId: unit.id,
+        status: 'active'
+      },
+      transaction
+    });
+
+    if (!activeReservation) {
+      console.log(`⚠️ لا يوجد حجز نشط للوحدة ${unit.unitNumber} - لا يمكن إنشاء طلب صيانة`);
+      return null;
+    }
+
     // التحقق من عدم وجود طلب صيانة مفتوح
     const existingMaintenanceOrder = await ServiceOrder.findOne({
       where: {
@@ -43,19 +43,19 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
       },
       transaction
     });
-    
+
     if (existingMaintenanceOrder) {
       console.log(`⚠️ يوجد طلب صيانة مفتوح بالفعل للوحدة ${unit.unitNumber}`);
       return existingMaintenanceOrder;
     }
-    
-    // إنشاء طلب صيانة جديد
+
+    // إنشاء طلب صيانة دورية جديد
     const maintenanceOrder = await ServiceOrder.create({
       userId: activeReservation.userId,
       reservationId: activeReservation.id,
       serviceType: 'maintenance',
-      serviceSubtype: 'general_maintenance',
-      description: `طلب صيانة تلقائي للوحدة ${unit.unitNumber} - تم تحديد حالة الوحدة إلى "تحت الصيانة"`,
+      serviceSubtype: 'periodic_maintenance',
+      description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
       status: 'pending',
       serviceHistory: [{
         status: 'pending',
@@ -63,13 +63,13 @@ const ensureMaintenanceOrder = async (unitId, transaction = null) => {
         changedBy: 'system',
         changedByRole: 'system',
         changedByName: 'النظام الآلي',
-        note: 'طلب صيانة تلقائي عند تحديث حالة الوحدة'
+        note: 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
       }]
     }, { transaction });
-    
-    console.log(`✅ تم إنشاء طلب صيانة ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
+
+    console.log(`✅ تم إنشاء طلب صيانة دورية ${maintenanceOrder.id} للوحدة ${unit.unitNumber}`);
     return maintenanceOrder;
-    
+
   } catch (error) {
     console.error(`❌ خطأ في إنشاء طلب صيانة للوحدة ${unitId}:`, error);
     return null;
@@ -274,18 +274,8 @@ const updateUnit = catchAsync(async (req, res, next) => {
     description: description !== undefined ? description : unit.description
   });
   
-  // ✅ التحقق من إنشاء طلب صيانة إضافي (في حالة فشل Hook)
-  if (status === 'maintenance' && originalStatus !== 'maintenance') {
-    console.log(`🔧 التحقق من إنشاء طلب صيانة للوحدة ${unit.unitNumber}...`);
-    
-    // انتظار قصير للسماح للـ Hook بالعمل
-    setTimeout(async () => {
-      const maintenanceOrder = await ensureMaintenanceOrder(unit.id);
-      if (maintenanceOrder) {
-        console.log(`✅ تأكيد: طلب صيانة ${maintenanceOrder.id} جاهز للوحدة ${unit.unitNumber}`);
-      }
-    }, 1000);
-  }
+  // ✅ Hook سيقوم بإنشاء طلب الصيانة تلقائياً عند تحديث الحالة
+  // لا حاجة لإضافة كود إضافي هنا لأن afterUpdate hook يتولى المهمة
   
   // Fetch the updated unit with owner and building details
   const updatedUnit = await RealEstateUnit.findByPk(req.params.id, {
@@ -306,17 +296,18 @@ const updateUnit = catchAsync(async (req, res, next) => {
   
   // ✅ إضافة معلومات حول طلب الصيانة في الاستجابة
   let responseData = {
-    unit: updatedUnit,
-    maintenanceOrderCreated: false
+    unit: updatedUnit
   };
-  
+
+  let responseMessage = 'تم تحديث الوحدة بنجاح';
+
   if (status === 'maintenance' && originalStatus !== 'maintenance') {
-    responseData.maintenanceOrderCreated = true;
-    responseData.message = 'تم تحديث حالة الوحدة إلى صيانة وإنشاء طلب صيانة تلقائي';
+    responseMessage = 'تم تحديث حالة الوحدة إلى "تحت الصيانة" وإنشاء طلب صيانة دورية تلقائياً';
   }
-  
+
   res.status(200).json({
     status: 'success',
+    message: responseMessage,
     data: responseData
   });
 });

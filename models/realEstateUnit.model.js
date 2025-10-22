@@ -123,13 +123,13 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
             return existingMaintenanceOrder;
           }
           
-          // إنشاء طلب صيانة جديد
+          // إنشاء طلب صيانة دورية جديد
           const maintenanceOrder = await ServiceOrder.create({
             userId: activeReservation.userId,
             reservationId: activeReservation.id,
             serviceType: 'maintenance',
-            serviceSubtype: 'general_maintenance',
-            description: `طلب صيانة تلقائي للوحدة ${unit.unitNumber} - تم تحديد حالة الوحدة إلى "تحت الصيانة"`,
+            serviceSubtype: 'periodic_maintenance',
+            description: `صيانة دورية - طلب تلقائي للوحدة ${unit.unitNumber}`,
             status: 'pending',
             serviceHistory: [{
               status: 'pending',
@@ -137,7 +137,7 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
               changedBy: 'system',
               changedByRole: 'system',
               changedByName: 'النظام الآلي',
-              note: 'طلب صيانة تلقائي عند تحديث حالة الوحدة'
+              note: 'طلب صيانة دورية تلقائي عند تحديث حالة الوحدة إلى صيانة'
             }]
           }, { transaction: options.transaction });
           

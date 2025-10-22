@@ -52,11 +52,11 @@ const RealEstateUnit = sequelize.define('RealEstateUnit', {
   bathrooms: {
     type: DataTypes.INTEGER
   },
-  // إضافة حقل رقم الموقف
+  // إضافة حقل عدد المواقف
   parkingNumber: {
     type: DataTypes.STRING(10),
     allowNull: true,
-    comment: 'رقم الموقف المخصص للوحدة'
+    comment: 'عدد المواقف الداخلية للوحدة'
   },
   price: {
     type: DataTypes.DECIMAL(10, 2),

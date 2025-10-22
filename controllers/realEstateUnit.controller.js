@@ -218,25 +218,42 @@ const updateUnit = catchAsync(async (req, res, next) => {
     }
   }
   
+  // التحقق من عدد المواقف المتاحة عند التحديث
   if (parkingNumber !== undefined && parkingNumber !== unit.parkingNumber) {
-    if (parkingNumber) {
-      // التحقق من عدم وجود تعارض مع موقف آخر
-      const targetBuildingId = buildingId || unit.buildingId;
-      const existingParkingUnit = await RealEstateUnit.findOne({
+    const targetBuildingId = buildingId || unit.buildingId;
+    const requestedParkingCount = parseInt(parkingNumber) || 0;
+    const currentParkingCount = parseInt(unit.parkingNumber) || 0;
+
+    if (requestedParkingCount < 0) {
+      return next(new AppError('عدد المواقف يجب أن يكون رقماً موجباً', 400));
+    }
+
+    if (requestedParkingCount !== currentParkingCount) {
+      // الحصول على معلومات المبنى
+      const building = await Building.findByPk(targetBuildingId);
+
+      // حساب عدد المواقف المستخدمة (باستثناء الوحدة الحالية)
+      const unitsWithParking = await RealEstateUnit.findAll({
         where: {
           buildingId: targetBuildingId,
-          parkingNumber,
+          parkingNumber: { [Op.ne]: null },
           id: { [Op.ne]: req.params.id }
-        }
+        },
+        attributes: ['parkingNumber']
       });
 
-      
-      // التحقق من النطاق المسموح
-      const building = await Building.findByPk(targetBuildingId);
-      const maxParkingNumber = building.internalParkingSpaces;
-      
-      if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
-        return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
+      const usedParkingCount = unitsWithParking.reduce((total, unit) => {
+        return total + (parseInt(unit.parkingNumber) || 0);
+      }, 0);
+
+      const totalUsedAfterUpdate = usedParkingCount + requestedParkingCount;
+      const availableParkingSpaces = building.internalParkingSpaces;
+
+      if (totalUsedAfterUpdate > availableParkingSpaces) {
+        return next(new AppError(
+          `عدد المواقف المطلوبة (${requestedParkingCount}) يتجاوز المتاح. المستخدم: ${usedParkingCount}، المتاح: ${availableParkingSpaces - usedParkingCount}`,
+          400
+        ));
       }
     }
   }
@@ -969,23 +986,35 @@ const createUnit = catchAsync(async (req, res, next) => {
     return next(new AppError('رقم الوحدة موجود مسبقاً في هذا المبنى', 400));
   }
   
+  // التحقق من عدد المواقف المتاحة
   if (parkingNumber) {
-    // التحقق من أن رقم الموقف لم يُستخدم من قبل في نفس المبنى
-    const existingParkingUnit = await RealEstateUnit.findOne({
+    const requestedParkingCount = parseInt(parkingNumber) || 0;
+
+    if (requestedParkingCount < 0) {
+      return next(new AppError('عدد المواقف يجب أن يكون رقماً موجباً', 400));
+    }
+
+    // حساب عدد المواقف المستخدمة حالياً
+    const unitsWithParking = await RealEstateUnit.findAll({
       where: {
         buildingId,
-        parkingNumber
-      }
+        parkingNumber: { [Op.ne]: null }
+      },
+      attributes: ['parkingNumber']
     });
-    
-    if (existingParkingUnit) {
-      return next(new AppError(`رقم الموقف ${parkingNumber} مستخدم مسبقاً في هذا المبنى`, 400));
-    }
-    
-    const maxParkingNumber = building.internalParkingSpaces;
-    
-    if (parseInt(parkingNumber) > maxParkingNumber || parseInt(parkingNumber) < 1) {
-      return next(new AppError(`رقم الموقف يجب أن يكون بين 1 و ${maxParkingNumber}`, 400));
+
+    const usedParkingCount = unitsWithParking.reduce((total, unit) => {
+      return total + (parseInt(unit.parkingNumber) || 0);
+    }, 0);
+
+    const totalUsedAfterAdd = usedParkingCount + requestedParkingCount;
+    const availableParkingSpaces = building.internalParkingSpaces;
+
+    if (totalUsedAfterAdd > availableParkingSpaces) {
+      return next(new AppError(
+        `عدد المواقف المطلوبة (${requestedParkingCount}) يتجاوز المتاح. المستخدم: ${usedParkingCount}، المتاح: ${availableParkingSpaces - usedParkingCount}`,
+        400
+      ));
     }
   }
   
